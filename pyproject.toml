@@ -67,3 +67,4 @@ exclude_lines = [
 
 [project.scripts]
 vis_download = "vis_downloader.async_download:main"
+casda_login = "vis_downloader.casda_login:main"

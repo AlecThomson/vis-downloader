@@ -2,16 +2,17 @@
 import argparse
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Awaitable, TypeVar, cast
 
 import requests
 from astropy import log as logger
 from astropy.table import Row, Table
-from astroquery.casda import Casda, CasdaClass
+from astroquery.casda import CasdaClass
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
+
+from vis_downloader.casda_login import login as casda_login
 
 T = TypeVar("T")
 
@@ -45,35 +46,6 @@ async def gather_with_limit(
         list[T],
         await tqdm.gather(*(sem_coro(c) for c in coros), desc=desc),
     )
-
-def casda_login(
-    username: str | None = None,
-    store_password: bool = False,
-    reenter_password: bool = False,
-) -> CasdaClass:
-    """Login to CASDA.
-
-    Args:
-        username (str | None, optional): CASDA username. Defaults to None.
-        store_password (bool, optional): Stores the password securely in your keyring. Defaults to False.
-        reenter_password (bool, optional): Asks for the password even if it is already stored in the keyring. This is the way to overwrite an already stored passwork on the keyring. Defaults to False.
-
-    Returns:
-        CasdaClass: CASDA class
-    """
-    casda: CasdaClass = Casda()
-    if username is None:
-        username = os.environ.get("CASDA_USERNAME")
-    if username is None:
-        username = input("Please enter your CASDA username: ")
-
-    casda.login(
-        username=username,
-        store_password=store_password,
-        reenter_password=reenter_password,
-    )
-
-    return casda
 
 async def get_staging_url(sbid: int) -> Table:
     tap = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")

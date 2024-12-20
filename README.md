@@ -45,6 +45,22 @@ options:
                         Number of workers
 ```
 
+To cache your CASDA credentials run:
+```console
+casda_login -h
+usage: casda_login [-h] username
+
+Login to CASDA and save credentials
+
+positional arguments:
+  username    Username for CASDA
+
+options:
+  -h, --help  show this help message and exit
+```
+
+Note that you will also want to set the `CASDA_USERNAME` environment variable for non-iteractive use.
+
 ## License
 
 `vis-downloader` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.
