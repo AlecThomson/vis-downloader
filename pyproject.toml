@@ -24,7 +24,12 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = []
+dependencies = [
+  "astropy",
+  "astroquery>=0.4.8.dev0",
+  "requests",
+  "tqdm",
+]
 
 [project.urls]
 Documentation = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downloader#readme"

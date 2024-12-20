@@ -1,21 +1,17 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Get all the data off CASDA"""
+import argparse
 import asyncio
 import logging
 import os
 from pathlib import Path
-import argparse
 from typing import Awaitable, TypeVar, cast
 
-
-from astropy import log as logger
-from astropy.table import Table, Row
-from astroquery.casda import Casda, CasdaClass
 import requests
-from tqdm.asyncio import tqdm
-
+from astropy import log as logger
+from astropy.table import Row, Table
+from astroquery.casda import Casda, CasdaClass
 from astroquery.utils.tap.core import TapPlus
+from tqdm.asyncio import tqdm
 
 T = TypeVar("T")
 
