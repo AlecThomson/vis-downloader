@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Get all the RACS data off CASDA"""
+"""Get all the data off CASDA"""
 import asyncio
 import logging
 import os
@@ -169,7 +169,7 @@ async def download_file(
 
     logger.info(f"Saving to {output_file}")
     total_size = int(response.headers.get("content-length", 0))
-    total_chunks = total_size / chunk_size
+    total_size / chunk_size
 
     with output_file.open("wb") as file_desc, tqdm(
         total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
@@ -229,9 +229,8 @@ async def get_cutouts_from_casda(
     
     return await gather_with_limit(max_workers, *coros, desc="SBIDs")
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download RACS data")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
     parser.add_argument("sbids", nargs="+", type=int, help="SBID to download")
     parser.add_argument("--output-dir", type=Path, help="Output directory", default=None)
     parser.add_argument("--username", type=str, help="CASDA username", default=None)
@@ -250,3 +249,7 @@ if __name__ == "__main__":
             max_workers=args.max_workers,
         )
     )
+
+
+if __name__ == "__main__":
+    main()
