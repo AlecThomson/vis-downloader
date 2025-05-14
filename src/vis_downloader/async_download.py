@@ -127,7 +127,7 @@ async def download_file(
     msg = f"Downloading from {url}"
     logger.info(msg)
     try:
-        response = await asyncio.to_thread(requests.get, url, timeout=timeout_seconds)
+        response = await asyncio.to_thread(requests.get, url, timeout=timeout_seconds, stream=True)
     except requests.exceptions.Timeout as e:
         msg = "Timed out connecting to server"
         logger.error(msg)
