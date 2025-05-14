@@ -106,6 +106,8 @@ def _download_file(
     timeout_seconds: int = 30,
     chunk_size: int = 1000,
 ) -> Path:
+    """See ``download_file`` function for full documentation.
+    """
 
     try:
         with requests.get(url, timeout=timeout_seconds, stream=True) as response:
@@ -161,13 +163,11 @@ async def download_file(
     msg = f"Downloading from {url}"
     logger.info(msg)
     
-    output_file = await asyncio.to_thread(
+    return await asyncio.to_thread(
         _download_file,
         url=url, output_file=output_file, timeout_seconds=timeout_seconds, chunk_size=chunk_size
     )
     
-    return output_file
-
 async def stage_and_download(
         result_table: Row,
         output_dir: Path,
