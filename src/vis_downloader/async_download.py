@@ -126,6 +126,7 @@ async def download_file(
     """
     msg = f"Downloading from {url}"
     logger.info(msg)
+    
     try:
         response = await asyncio.to_thread(requests.get, url, timeout=timeout_seconds, stream=True)
     except requests.exceptions.Timeout as e:
@@ -148,6 +149,10 @@ async def download_file(
 
     msg = f"Downloaded to {output_file}"
     logger.info(msg)
+    
+    # Explicitly close andnd trust nothing
+    response.close()
+    
     return output_file
 
 async def stage_and_download(
