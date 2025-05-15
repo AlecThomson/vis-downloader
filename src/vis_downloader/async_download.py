@@ -138,7 +138,7 @@ async def download_file(
                 total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
             ) as pbar:
                 async for chunk in response.content.iter_chunked(chunk_size):
-                    pbar.update(len(chunk))
+                    pbar.update(len(chunk) * 1_000_000)
                     file_desc.write(chunk)
                 
     msg = f"Downloaded to {output_file}"
