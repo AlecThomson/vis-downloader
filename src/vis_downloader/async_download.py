@@ -137,7 +137,7 @@ async def download_file(
             with output_file.open("wb") as file_desc, tqdm(
                 total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
             ) as pbar:
-                async for chunk in response.content.iter_chunk(chunk_size):
+                async for chunk in response.content.iter_chunked(chunk_size):
                     file_desc.write(chunk)
                 
     msg = f"Downloaded to {output_file}"
