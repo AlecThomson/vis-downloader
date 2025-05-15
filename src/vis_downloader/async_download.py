@@ -162,10 +162,10 @@ async def download_sbid_from_casda(
 ) -> list[Path]:
     result_table: Table = await get_staging_url(sbid)
     coros = []
-    for row in result_table:
-        coros.append(stage_and_download(row, output_dir, casda))
+    async for row in result_table:
+        coros.append(await stage_and_download(row, output_dir, casda))
 
-    return await gather_with_limit(max_workers, *coros, desc=f"MSs for SBID {sbid}")
+    return coros
 
 
 
