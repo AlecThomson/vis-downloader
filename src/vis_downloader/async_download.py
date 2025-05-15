@@ -188,9 +188,9 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        coros.append(download_sbid_from_casda(sbid, output_dir, casda, max_workers=max_workers))
+        coros.append(await download_sbid_from_casda(sbid, output_dir, casda, max_workers=max_workers))
     
-    return await gather_with_limit(max_workers, *coros, desc="SBIDs")
+    return coros
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
