@@ -125,7 +125,7 @@ async def download_file(
     IonexError
         If the download times out.
     """
-    msg = f"Downloading from {url}"
+    msg = f"Using aiohttp, Downloading from {url}"
     logger.info(msg)
     
     async with aiohttp.ClientSession() as session:
