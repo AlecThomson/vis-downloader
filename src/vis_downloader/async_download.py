@@ -105,7 +105,7 @@ async def download_file(
     url: str,
     output_file: Path,
     timeout_seconds: int = 30,
-    chunk_size: int = 1000,
+    chunk_size: int = 100000,
 ) -> Path:
     """Download a file from a given URL using asyncio.
 
