@@ -133,13 +133,13 @@ async def download_file(
         async with session.get(url) as response:
             assert response.status == 200, f"{response.status=}, not successful"
             
-            total_size = int(response.headers.get("content-length", 0)) * 1_000_000
+            total_size = int(response.headers.get("content-length", 0))
             
             with output_file.open("wb") as file_desc, tqdm(
                 total=total_size, unit="B", unit_scale=True, unit_divisor=1, desc=output_file.name
             ) as pbar:
                 async for chunk in response.content.iter_chunked(chunk_size):
-                    pbar.update(len(chunk) * 1_000_000)
+                    pbar.update(len(chunk))
                     file_desc.write(chunk)
                 
     msg = f"Downloaded to {output_file}"
