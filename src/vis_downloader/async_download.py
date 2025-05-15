@@ -128,7 +128,8 @@ async def download_file(
     msg = f"Using aiohttp, Downloading from {url}"
     logger.info(msg)
     
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=60*60)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as response:
             assert response.status == 200, f"{response.status=}, not successful"
             
