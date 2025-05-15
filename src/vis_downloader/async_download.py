@@ -132,7 +132,7 @@ async def download_file(
         async with session.get(url) as response:
             assert response.status == 200, f"{response.status=}, not successful"
             
-            total_size = int(response.headers.get("content-length", 0)) * chunk_size
+            total_size = int(response.headers.get("content-length", 0)) * 1_000_000
             
             with output_file.open("wb") as file_desc, tqdm(
                 total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
