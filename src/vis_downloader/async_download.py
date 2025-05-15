@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Awaitable, TypeVar, cast
 
+import aiohttp
 import requests
 from astropy import log as logger
 from astropy.table import Row, Table
@@ -126,26 +127,19 @@ async def download_file(
     """
     msg = f"Downloading from {url}"
     logger.info(msg)
-    try:
-        response = await asyncio.to_thread(requests.get, url, timeout=timeout_seconds)
-    except requests.exceptions.Timeout as e:
-        msg = "Timed out connecting to server"
-        logger.error(msg)
-        raise Exception(msg) from e
-
-    response.raise_for_status()
-
-    logger.info(f"Saving to {output_file}")
-    total_size = int(response.headers.get("content-length", 0))
-    total_size / chunk_size
-
-    with output_file.open("wb") as file_desc, tqdm(
-        total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
-    ) as pbar:
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            pbar.update(len(chunk))
-            await asyncio.to_thread(file_desc.write, chunk)
-
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            assert response.status == 200, f"{response.status=}, not successful"
+            
+            total_size = int(response.headers.get("content-length", 0))
+            
+            with output_file.open("wb") as file_desc, tqdm(
+                total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
+            ) as pbar:
+                async for chunk in response.content.iter_chunk(chunk_size):
+                    file_desc.write(chunk)
+                
     msg = f"Downloaded to {output_file}"
     logger.info(msg)
     return output_file
