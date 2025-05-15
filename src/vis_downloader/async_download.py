@@ -162,7 +162,7 @@ async def download_sbid_from_casda(
 ) -> list[Path]:
     result_table: Table = await get_staging_url(sbid)
     coros = []
-    async for row in result_table:
+    for row in result_table:
         coros.append(await stage_and_download(row, output_dir, casda))
 
     return coros
