@@ -35,7 +35,7 @@ async def gather_with_limit(
         Awaitable: The result of the coroutines
     """
     if limit is None:
-        return cast(list[T], await tqdm.gather(*coros, desc=desc))
+        return cast(list[T], await tqdm.gather(*coros, maxinterval=100000000,  desc=desc))
 
     semaphore = asyncio.Semaphore(limit)
 
@@ -45,7 +45,7 @@ async def gather_with_limit(
 
     return cast(
         list[T],
-        await tqdm.gather(*(sem_coro(c) for c in coros), desc=desc),
+        await tqdm.gather(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
     )
 
 async def get_staging_url(sbid: int) -> Table:
