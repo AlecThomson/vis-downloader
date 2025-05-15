@@ -163,9 +163,9 @@ async def download_sbid_from_casda(
     result_table: Table = await get_staging_url(sbid)
     coros = []
     for row in result_table:
-        coros.append(await stage_and_download(row, output_dir, casda))
+        coros.append(stage_and_download(row, output_dir, casda))
 
-    return coros
+    return gather_with_limit(*coros, limit=max_workers)
 
 
 
