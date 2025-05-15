@@ -136,7 +136,7 @@ async def download_file(
             total_size = int(response.headers.get("content-length", 0))
             
             with output_file.open("wb") as file_desc, tqdm(
-                total=total_size, unit="B", unit_scale=True, unit_divisor=1, desc=output_file.name
+                total=total_size, unit="B", unit_scale=True, unit_divisor=1024, desc=output_file.name
             ) as pbar:
                 async for chunk in response.content.iter_chunked(chunk_size):
                     pbar.update(len(chunk))
