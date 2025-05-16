@@ -167,7 +167,7 @@ async def download_sbid_from_casda(
     result_table: Table = await get_staging_url(sbid)
     
     if output_dir is None:
-        output_dir = Path(os.getcwd()) / sbid
+        output_dir = Path(os.getcwd()) / str(sbid)
         output_dir.mkdir(parents=True, exist_ok=True)
     
     coros = []
