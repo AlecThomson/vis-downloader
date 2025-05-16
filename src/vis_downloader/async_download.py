@@ -107,6 +107,7 @@ async def download_file(
     connect_timeout_seconds: int = 30, 
     download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 100000,
+    max_retries: int = 3
 ) -> Path:
     """Download a file from a given URL using asyncio.
 
@@ -122,6 +123,8 @@ async def download_file(
         Allowed length of time to dowload a file, in seconds. Defults to 12 hours.
     chunk_size : int, optional
         Chunks of data to download, by default 1000
+    max_retries: int, optional
+       Maximum number of retries should the download fail. Defaults to 3.
 
     Raises
     ------
@@ -132,19 +135,30 @@ async def download_file(
     logger.info(msg)
     
     timeout = aiohttp.ClientTimeout(total=download_timeout_seconds, connect=connect_timeout_seconds)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url) as response:
-            assert response.status == 200, f"{response.status=}, not successful"
-            
-            total_size = int(response.headers.get("content-length", 0))
-            
-            with output_file.open("wb") as file_desc, tqdm(
-                total=total_size, unit="B", unit_scale=True, unit_divisor=1024, desc=output_file.name
-            ) as pbar:
-                async for chunk in response.content.iter_chunked(chunk_size):
-                    pbar.update(len(chunk))
-                    file_desc.write(chunk)
-                
+    import requests
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    assert response.status == 200, f"{response.status=}, not successful"
+                    
+                    total_size = int(response.headers.get("content-length", 0))
+                    
+                    with output_file.open("wb") as file_desc, tqdm(
+                        total=total_size, unit="B", unit_scale=True, unit_divisor=1024, desc=output_file.name
+                    ) as pbar:
+                        async for chunk in response.content.iter_chunked(chunk_size):
+                            pbar.update(len(chunk))
+               
+                            file_desc.write(chunk)
+            # Download cuessful. Breaking out
+            break
+        except   requests.exceptions.ConnectionError:
+            msg = f"Failed to download {output_file=}. Retrying {attempt+1} of {max_retries}."
+            logger.info(msg)
+    else:
+        raise ValueError(f"Failed to download {output_file=}")
+                    
     msg = f"Downloaded to {output_file}"
     logger.info(msg)
     return output_file
