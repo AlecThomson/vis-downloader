@@ -81,7 +81,7 @@ async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         str: Download URL
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = await asyncio.to_thread(casda.stage_data, Table(result_row))
+    url_list: list[str] = casda.stage_data(Table(result_row))
 
     good_url_list = []
     for url in url_list:
