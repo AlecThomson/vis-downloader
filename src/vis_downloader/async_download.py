@@ -165,6 +165,11 @@ async def download_sbid_from_casda(
         max_workers: int | None = None,
 ) -> list[Path]:
     result_table: Table = await get_staging_url(sbid)
+    
+    if output_dir is None:
+        output_dir = Path(os.cwd()) / sbid
+        output_dir.mkdir(parents=True, exist_ok=True)
+    
     coros = []
     for row in result_table:
         coros.append(stage_and_download(row, output_dir, casda))
@@ -187,9 +192,6 @@ async def get_cutouts_from_casda(
         reenter_password=reenter_password,
     )
 
-    if output_dir is None:
-        output_dir = Path.cwd()
-
     coros = []
     for sbid in sbid_list:
         coros.append(await download_sbid_from_casda(sbid, output_dir, casda, max_workers=max_workers))
@@ -199,7 +201,7 @@ async def get_cutouts_from_casda(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
     parser.add_argument("sbids", nargs="+", type=int, help="SBID to download")
-    parser.add_argument("--output-dir", type=Path, help="Output directory", default=None)
+    parser.add_argument("--output-dir", type=Path, help="Output directory. If unset a directory for each SBID will be created.", default=None)
     parser.add_argument("--username", type=str, help="CASDA username", default=None)
     parser.add_argument("--store-password", action="store_true", help="Store password in keyring")
     parser.add_argument("--reenter-password", action="store_true", help="Reenter password")
