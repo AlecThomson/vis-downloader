@@ -81,7 +81,9 @@ async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         str: Download URL
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = casda.stage_data(Table(result_row))
+    url_list: list[str] = asyncio.to_thread(
+        casda.stage_data, Table(result_row)
+    )
 
     good_url_list = []
     for url in url_list:
@@ -136,28 +138,19 @@ async def download_file(
     
     timeout = aiohttp.ClientTimeout(total=download_timeout_seconds, connect=connect_timeout_seconds)
     import requests
-    for attempt in range(max_retries):
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as response:
-                    assert response.status == 200, f"{response.status=}, not successful"
-                    
-                    total_size = int(response.headers.get("content-length", 0))
-                    
-                    with output_file.open("wb") as file_desc, tqdm(
-                        total=total_size, unit="B", unit_scale=True, unit_divisor=1024, desc=output_file.name
-                    ) as pbar:
-                        async for chunk in response.content.iter_chunked(chunk_size):
-                            pbar.update(len(chunk))
-               
-                            file_desc.write(chunk)
-            # Download cuessful. Breaking out
-            break
-        except   requests.exceptions.ConnectionError:
-            msg = f"Failed to download {output_file=}. Retrying {attempt+1} of {max_retries}."
-            logger.info(msg)
-    else:
-        raise ValueError(f"Failed to download {output_file=}")
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as response:
+                assert response.status == 200, f"{response.status=}, not successful"
+                
+                total_size = int(response.headers.get("content-length", 0))
+                
+                with output_file.open("wb") as file_desc, tqdm(
+                    total=total_size, unit="B", unit_scale=True, unit_divisor=1024, desc=output_file.name
+                ) as pbar:
+                    async for chunk in response.content.iter_chunked(chunk_size):
+                        pbar.update(len(chunk))
+            
+                        file_desc.write(chunk)
                     
     msg = f"Downloaded to {output_file}"
     logger.info(msg)
