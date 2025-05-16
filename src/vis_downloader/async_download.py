@@ -5,8 +5,8 @@ import logging
 from pathlib import Path
 from typing import Awaitable, TypeVar, cast
 
+import os
 import aiohttp
-import requests
 from astropy import log as logger
 from astropy.table import Row, Table
 from astroquery.casda import CasdaClass
@@ -167,7 +167,7 @@ async def download_sbid_from_casda(
     result_table: Table = await get_staging_url(sbid)
     
     if output_dir is None:
-        output_dir = Path(os.cwd()) / sbid
+        output_dir = Path(os.getcwd()) / sbid
         output_dir.mkdir(parents=True, exist_ok=True)
     
     coros = []
