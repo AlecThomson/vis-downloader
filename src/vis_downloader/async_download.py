@@ -104,7 +104,8 @@ async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
 async def download_file(
     url: str,
     output_file: Path,
-    timeout_seconds: int = 30,
+    connect_timeout_seconds: int = 30, 
+    download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 100000,
 ) -> Path:
     """Download a file from a given URL using asyncio.
@@ -115,8 +116,10 @@ async def download_file(
         URL to download.
     output_file : Path
         Output file path.
-    timeout_seconds : int, optional
-        Seconds to wait for request timeout, by default 30
+    connect_timeout_seconds : int, optional
+        Number of seconds to wait to establish connection. Defaults to 30.
+    download_timeout_seconds : int, optional
+        Allowed length of time to dowload a file, in seconds. Defults to 12 hours.
     chunk_size : int, optional
         Chunks of data to download, by default 1000
 
@@ -128,7 +131,7 @@ async def download_file(
     msg = f"Using aiohttp, Downloading from {url}"
     logger.info(msg)
     
-    timeout = aiohttp.ClientTimeout(total=60*60)
+    timeout = aiohttp.ClientTimeout(total=download_timeout_seconds, connect=connect_timeout_seconds)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as response:
             assert response.status == 200, f"{response.status=}, not successful"
