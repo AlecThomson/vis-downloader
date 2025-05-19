@@ -66,7 +66,7 @@ async def get_staging_url(sbid: int) -> Table:
     
     return results
 
-async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
+def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     """Get the download URL for a file on CASDA.
 
     Args:
@@ -80,15 +80,10 @@ async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     Returns:
         str: Download URL
     """
-    import requests
-    try:
-        logger.info("Staging data on CASDA...")
-        url_list: list[str] = await asyncio.to_thread(
-            casda.stage_data, Table(result_row)
-        )
-    except requests.exceptions.ConnectionError:
-        logger.warning("Cause requects.exception.ConnectionError. Ignroing.")
-        
+    logger.info("Staging data on CASDA...")
+    url_list: list[str] = casda.stage_data(Table(result_row)
+    )
+    
 
     good_url_list = []
     for url in url_list:
@@ -166,7 +161,7 @@ async def stage_and_download(
         output_dir: Path,
         casda: CasdaClass,
 ):
-    url = await get_download_url(result_table, casda)
+    url = await asyncio.to_threat(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
     return await download_file(url, output_file)
 
