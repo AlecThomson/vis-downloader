@@ -161,7 +161,7 @@ async def stage_and_download(
         output_dir: Path,
         casda: CasdaClass,
 ):
-    url = await asyncio.to_threat(get_download_url, result_table, casda)
+    url = await asyncio.to_thread(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
     return await download_file(url, output_file)
 
