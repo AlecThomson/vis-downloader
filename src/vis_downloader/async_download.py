@@ -157,17 +157,17 @@ async def stage_and_download(
         result_table: Row,
         output_dir: Path,
         casda: CasdaClass,
-):
+) -> list[Awaitable[Path]]:
     url = await asyncio.to_thread(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
-    return await download_file(url, output_file)
+    
+    return download_file(url, output_file)
 
 async def download_sbid_from_casda(
         sbid: int,
         output_dir: Path,
         casda: CasdaClass,
-        max_workers: int | None = None,
-) -> list[Path]:
+) -> list[Awaitable[Path]]:
     result_table: Table = await get_staging_url(sbid)
     
     if output_dir is None:
@@ -178,7 +178,7 @@ async def download_sbid_from_casda(
     for row in result_table:
         coros.append(stage_and_download(row, output_dir, casda))
 
-    return await gather_with_limit(max_workers, *coros, desc="Download")
+    return coros
 
 
 
@@ -198,9 +198,11 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        coros.append(await download_sbid_from_casda(sbid, output_dir, casda, max_workers=max_workers))
+        coros.extend(download_sbid_from_casda(sbid, output_dir, casda))
     
-    return coros
+    paths = await gather_with_limit(max_workers, *coros, desc="Download")
+    
+    return paths
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
