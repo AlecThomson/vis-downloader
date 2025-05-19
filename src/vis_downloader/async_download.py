@@ -109,7 +109,6 @@ async def download_file(
     connect_timeout_seconds: int = 30, 
     download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 1000000,
-    max_retries: int = 3
 ) -> Path:
     """Download a file from a given URL using asyncio.
 
@@ -125,9 +124,7 @@ async def download_file(
         Allowed length of time to dowload a file, in seconds. Defults to 12 hours.
     chunk_size : int, optional
         Chunks of data to download, by default 1000
-    max_retries: int, optional
-       Maximum number of retries should the download fail. Defaults to 3.
-
+    
     Raises
     ------
     IonexError
