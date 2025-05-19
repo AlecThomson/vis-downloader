@@ -176,7 +176,7 @@ async def download_sbid_from_casda(
     
     coros = []
     for row in result_table:
-        coros.append(await stage_and_download(row, output_dir, casda))
+        coros.append(stage_and_download(row, output_dir, casda))
 
     return coros
 
@@ -198,7 +198,9 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        coros.append(download_sbid_from_casda(sbid, output_dir, casda))
+        results = download_sbid_from_casda(sbid, output_dir, casda)
+        logger.info(f"{results=}")
+        coros.append(results)
     
     paths = await gather_with_limit(max_workers, *coros, desc="Download")
     
