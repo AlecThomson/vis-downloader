@@ -12,6 +12,7 @@ from astropy.table import Row, Table
 from astroquery.casda import CasdaClass
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
+from tqdm import tqdm as sync_tqdm
 
 from vis_downloader.casda_login import login as casda_login
 
@@ -106,7 +107,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
 async def download_file(
     url: str,
     output_file: Path,
-    connect_timeout_seconds: int = 30, 
+    connect_timeout_seconds: int = 60, 
     download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 1000000,
 ) -> Path:
@@ -161,24 +162,27 @@ async def stage_and_download(
     url = await asyncio.to_thread(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
     
-    return download_file(url, output_file)
+    return await download_file(url, output_file)
 
 async def download_sbid_from_casda(
         sbid: int,
+        row,
         output_dir: Path,
         casda: CasdaClass,
 ) -> list[Awaitable[Path]]:
-    result_table: Table = await get_staging_url(sbid)
+    
+    # result_table: Table = await get_staging_url(sbid)
     
     if output_dir is None:
         output_dir = Path(os.getcwd()) / str(sbid)
         output_dir.mkdir(parents=True, exist_ok=True)
     
-    coros = []
-    for row in result_table:
-        coros.append(stage_and_download(row, output_dir, casda))
+    # coros = []
+    # for row in result_table:
+        # coros.append(stage_and_download(row, output_dir, casda))
+    path = await stage_and_download(row, output_dir, casda)
 
-    return coros
+    return path
 
 
 
@@ -198,9 +202,22 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        results = download_sbid_from_casda(sbid, output_dir, casda)
-        logger.info(f"{results=}")
-        coros.append(results)
+        result_table: Table = await get_staging_url(sbid)
+        
+        # results = await download_sbid_from_casda(sbid, output_dir, casda)
+        # logger.info(f"{results=}")
+        # coros.append(results)
+    
+        for row in result_table:
+            coros.append(
+                download_sbid_from_casda(
+                    sbid=sbid, row=row, output_dir=output_dir, casda=casda
+                )
+            )
+    
+
+    logger.info(f"{coros=}")
+    logger.info(f"{len(coros)=}")
     
     paths = await gather_with_limit(max_workers, *coros, desc="Download")
     
