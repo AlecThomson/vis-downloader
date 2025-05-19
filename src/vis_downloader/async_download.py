@@ -198,7 +198,7 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        coros.extend(download_sbid_from_casda(sbid, output_dir, casda))
+        coros.extend(await download_sbid_from_casda(sbid, output_dir, casda))
     
     paths = gather_with_limit(max_workers, *coros, desc="Download")
     
