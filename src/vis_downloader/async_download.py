@@ -176,7 +176,7 @@ async def download_sbid_from_casda(
     
     coros = []
     for row in result_table:
-        coros.append(stage_and_download(row, output_dir, casda))
+        coros.append(await stage_and_download(row, output_dir, casda))
 
     return coros
 
