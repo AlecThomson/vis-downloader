@@ -27,7 +27,7 @@ To make sure you don't DDoS CASDA, please make use of the `--max-workers` option
 
 ```console
 get_vis -h
-usage: get_vis [-h] [--output-dir OUTPUT_DIR] [--username USERNAME] [--store-password] [--reenter-password] [--max-workers MAX_WORKERS] sbids [sbids ...]
+usage: vis_download [-h] [--output-dir OUTPUT_DIR] [--username USERNAME] [--store-password] [--reenter-password] [--max-workers MAX_WORKERS] sbids [sbids ...]
 
 Download visibilities from CASDA for a given SBID
 
