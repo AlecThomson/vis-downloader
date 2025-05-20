@@ -171,15 +171,10 @@ async def download_sbid_from_casda(
         casda: CasdaClass,
 ) -> list[Awaitable[Path]]:
     
-    # result_table: Table = await get_staging_url(sbid)
-    
     if output_dir is None:
         output_dir = Path(os.getcwd()) / str(sbid)
         output_dir.mkdir(parents=True, exist_ok=True)
     
-    # coros = []
-    # for row in result_table:
-        # coros.append(stage_and_download(row, output_dir, casda))
     path = await stage_and_download(row, output_dir, casda)
 
     return path
@@ -220,10 +215,6 @@ async def get_cutouts_from_casda(
     for sbid in sbid_list:
         result_table: Table = await get_staging_url(sbid)
         
-        # results = await download_sbid_from_casda(sbid, output_dir, casda)
-        # logger.info(f"{results=}")
-        # coros.append(results)
-    
         for row in result_table:
             coros.append(
                 download_sbid_from_casda(
