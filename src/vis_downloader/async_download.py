@@ -184,6 +184,21 @@ async def download_sbid_from_casda(
 
     return path
 
+def extract_tarball(in_path: Path) -> Path:
+
+    import tarfile
+
+    if not tarfile.is_tarfile(in_path):
+        return in_path
+
+    logger.info(f"Extracting {in_path=}")
+
+    with tarfile.open(name=in_path) as open_tarfile:
+        open_tarfile.extractall(path=in_path.parent, filter="data")
+
+    in_path.unlink()
+    
+    return in_path.parent
 
 
 async def get_cutouts_from_casda(
@@ -193,6 +208,7 @@ async def get_cutouts_from_casda(
     store_password: bool = False,
     reenter_password: bool = False,
     max_workers: int | None = None,
+    extract_tar: bool = False
 ) -> list[Path]:
     casda = casda_login(
         username=username,
@@ -221,6 +237,10 @@ async def get_cutouts_from_casda(
     
     paths = await gather_with_limit(max_workers, *coros, desc="Download")
     
+    if extract_tar:
+        coros = [asyncio.to_thread(extract_tarball, in_path=path) for path in paths]
+        paths = await gather_with_limit(max_workers, *coros, desc="Extracting tarballs")
+    
     return paths
 
 def main() -> None:
@@ -231,7 +251,9 @@ def main() -> None:
     parser.add_argument("--store-password", action="store_true", help="Store password in keyring")
     parser.add_argument("--reenter-password", action="store_true", help="Reenter password")
     parser.add_argument("--max-workers", type=int, help="Number of workers", default=None)
+    parser.add_argument("--extract-tar", action="store_true", help="If a file is a tarball attempt to extract it. This removes the original tar file if successful.")
     args = parser.parse_args()
+    
 
     asyncio.run(
         get_cutouts_from_casda(
@@ -241,6 +263,7 @@ def main() -> None:
             store_password=args.store_password,
             reenter_password=args.reenter_password,
             max_workers=args.max_workers,
+            extract_tar=args.extract_tar
         )
     )
 
