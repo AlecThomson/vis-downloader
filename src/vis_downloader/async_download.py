@@ -171,10 +171,10 @@ async def download_file(
     logger.info(msg)
     
     timeout = aiohttp.ClientTimeout(total=download_timeout_seconds, connect=connect_timeout_seconds)
-    import requests
     async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as response:
-                assert response.status == 200, f"{response.status=}, not successful"
+                if response.status != 200:
+                    raise ValueError(f"{response.status=}, indicating the request was no successful.")
                 
                 total_size = int(response.headers.get("content-length", 0))
                 
@@ -195,7 +195,7 @@ async def stage_and_download(
         result_table: Row,
         output_dir: Path,
         casda: CasdaClass,
-) -> list[Awaitable[Path]]:
+) -> Path:
     url = await asyncio.to_thread(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
     
