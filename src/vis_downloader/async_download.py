@@ -5,12 +5,14 @@ import logging
 from pathlib import Path
 from typing import Awaitable, TypeVar, cast
 
-import requests
+import os
+import aiohttp
 from astropy import log as logger
 from astropy.table import Row, Table
 from astroquery.casda import CasdaClass
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
+from tqdm import tqdm as sync_tqdm
 
 from vis_downloader.casda_login import login as casda_login
 
@@ -34,7 +36,7 @@ async def gather_with_limit(
         Awaitable: The result of the coroutines
     """
     if limit is None:
-        return cast(list[T], await tqdm.gather(*coros, desc=desc))
+        return cast(list[T], await tqdm.gather(*coros, maxinterval=100000000,  desc=desc))
 
     semaphore = asyncio.Semaphore(limit)
 
@@ -44,7 +46,7 @@ async def gather_with_limit(
 
     return cast(
         list[T],
-        await tqdm.gather(*(sem_coro(c) for c in coros), desc=desc),
+        await tqdm.gather(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
     )
 
 async def get_staging_url(sbid: int) -> Table:
@@ -65,7 +67,7 @@ async def get_staging_url(sbid: int) -> Table:
     
     return results
 
-async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
+def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     """Get the download URL for a file on CASDA.
 
     Args:
@@ -80,7 +82,9 @@ async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         str: Download URL
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = await asyncio.to_thread(casda.stage_data, Table(result_row))
+    url_list: list[str] = casda.stage_data(Table(result_row)
+    )
+    
 
     good_url_list = []
     for url in url_list:
@@ -100,47 +104,12 @@ async def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     logger.info(msg)
     return url
 
-def _download_file(
-    url: str,
-    output_file: Path,
-    timeout_seconds: int = 30,
-    chunk_size: int = 1000,
-) -> Path:
-    """See ``download_file`` function for full documentation.
-    """
-
-    try:
-        with requests.get(url, timeout=timeout_seconds, stream=True) as response:
-    
-            response.raise_for_status()
-
-            logger.info(f"Saving to {output_file}")
-            total_size = int(response.headers.get("content-length", 0))
-            total_size / chunk_size
-
-            with output_file.open("wb") as file_desc, tqdm(
-                total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
-            ) as pbar:
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    pbar.update(len(chunk))
-                    file_desc.write(chunk)
-
-            msg = f"Downloaded to {output_file}"
-            logger.info(msg)
-            
-    except requests.exceptions.Timeout as e:
-        msg = "Timed out connecting to server"
-        logger.error(msg)
-        raise Exception(msg) from e
-
-    return output_file
-
-
 async def download_file(
     url: str,
     output_file: Path,
-    timeout_seconds: int = 30,
-    chunk_size: int = 1000,
+    connect_timeout_seconds: int = 60, 
+    download_timeout_seconds: int = 60*60*12, 
+    chunk_size: int = 1000000,
 ) -> Path:
     """Download a file from a given URL using asyncio.
 
@@ -150,46 +119,82 @@ async def download_file(
         URL to download.
     output_file : Path
         Output file path.
-    timeout_seconds : int, optional
-        Seconds to wait for request timeout, by default 30
+    connect_timeout_seconds : int, optional
+        Number of seconds to wait to establish connection. Defaults to 30.
+    download_timeout_seconds : int, optional
+        Allowed length of time to dowload a file, in seconds. Defults to 12 hours.
     chunk_size : int, optional
         Chunks of data to download, by default 1000
-
+    
     Raises
     ------
     IonexError
         If the download times out.
     """
-    msg = f"Downloading from {url}"
+    msg = f"Using aiohttp, Downloading from {url}"
     logger.info(msg)
     
-    return await asyncio.to_thread(
-        _download_file,
-        url=url, output_file=output_file, timeout_seconds=timeout_seconds, chunk_size=chunk_size
-    )
-    
+    timeout = aiohttp.ClientTimeout(total=download_timeout_seconds, connect=connect_timeout_seconds)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise ValueError(f"{response.status=}, indicating the request was no successful.")
+                
+                total_size = int(response.headers.get("content-length", 0))
+                
+                with output_file.open("wb") as file_desc, tqdm(
+                    total=total_size, unit="B", unit_scale=True, unit_divisor=1024, desc=output_file.name
+                ) as pbar:
+                    async for chunk in response.content.iter_chunked(chunk_size):
+                        pbar.update(len(chunk))
+            
+                        file_desc.write(chunk)
+                    
+    msg = f"Downloaded to {output_file}"
+    logger.info(msg)
+    return output_file
+
+
 async def stage_and_download(
         result_table: Row,
         output_dir: Path,
         casda: CasdaClass,
-):
-    url = await get_download_url(result_table, casda)
+) -> Path:
+    url = await asyncio.to_thread(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
+    
     return await download_file(url, output_file)
 
 async def download_sbid_from_casda(
         sbid: int,
+        row,
         output_dir: Path,
         casda: CasdaClass,
-        max_workers: int | None = None,
-) -> list[Path]:
-    result_table: Table = await get_staging_url(sbid)
-    coros = []
-    for row in result_table:
-        coros.append(stage_and_download(row, output_dir, casda))
+) -> list[Awaitable[Path]]:
+    
+    if output_dir is None:
+        output_dir = Path(os.getcwd()) / str(sbid)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    
+    path = await stage_and_download(row, output_dir, casda)
 
-    return await gather_with_limit(max_workers, *coros, desc=f"MSs for SBID {sbid}")
+    return path
 
+def extract_tarball(in_path: Path) -> Path:
+
+    import tarfile
+
+    if not tarfile.is_tarfile(in_path):
+        return in_path
+
+    logger.info(f"Extracting {in_path=}")
+
+    with tarfile.open(name=in_path) as open_tarfile:
+        open_tarfile.extractall(path=in_path.parent, filter="data")
+
+    in_path.unlink()
+    
+    return in_path.parent
 
 
 async def get_cutouts_from_casda(
@@ -199,6 +204,7 @@ async def get_cutouts_from_casda(
     store_password: bool = False,
     reenter_password: bool = False,
     max_workers: int | None = None,
+    extract_tar: bool = False
 ) -> list[Path]:
     casda = casda_login(
         username=username,
@@ -206,24 +212,40 @@ async def get_cutouts_from_casda(
         reenter_password=reenter_password,
     )
 
-    if output_dir is None:
-        output_dir = Path.cwd()
-
     coros = []
     for sbid in sbid_list:
-        coros.append(download_sbid_from_casda(sbid, output_dir, casda, max_workers=max_workers))
+        result_table: Table = await get_staging_url(sbid)
+        
+        for row in result_table:
+            coros.append(
+                download_sbid_from_casda(
+                    sbid=sbid, row=row, output_dir=output_dir, casda=casda
+                )
+            )
     
-    return await gather_with_limit(max_workers, *coros, desc="SBIDs")
+
+    logger.info(f"{coros=}")
+    logger.info(f"{len(coros)=}")
+    
+    paths = await gather_with_limit(max_workers, *coros, desc="Download")
+    
+    if extract_tar:
+        coros = [asyncio.to_thread(extract_tarball, in_path=path) for path in paths]
+        paths = await gather_with_limit(max_workers, *coros, desc="Extracting tarballs")
+    
+    return paths
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
     parser.add_argument("sbids", nargs="+", type=int, help="SBID to download")
-    parser.add_argument("--output-dir", type=Path, help="Output directory", default=None)
+    parser.add_argument("--output-dir", type=Path, help="Output directory. If unset a directory for each SBID will be created.", default=None)
     parser.add_argument("--username", type=str, help="CASDA username", default=None)
     parser.add_argument("--store-password", action="store_true", help="Store password in keyring")
     parser.add_argument("--reenter-password", action="store_true", help="Reenter password")
     parser.add_argument("--max-workers", type=int, help="Number of workers", default=None)
+    parser.add_argument("--extract-tar", action="store_true", help="If a file is a tarball attempt to extract it. This removes the original tar file if successful.")
     args = parser.parse_args()
+    
 
     asyncio.run(
         get_cutouts_from_casda(
@@ -233,6 +255,7 @@ def main() -> None:
             store_password=args.store_password,
             reenter_password=args.reenter_password,
             max_workers=args.max_workers,
+            extract_tar=args.extract_tar
         )
     )
 

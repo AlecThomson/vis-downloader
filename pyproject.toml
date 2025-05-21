@@ -29,6 +29,7 @@ dependencies = [
   "astroquery>=0.4.8.dev0",
   "requests",
   "tqdm",
+  "aiohttp"
 ]
 
 [project.urls]
