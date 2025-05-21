@@ -104,42 +104,6 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     logger.info(msg)
     return url
 
-def _download_file(
-    url: str,
-    output_file: Path,
-    timeout_seconds: int = 30,
-    chunk_size: int = 1000,
-) -> Path:
-    """See ``download_file`` function for full documentation.
-    """
-
-    try:
-        with requests.get(url, timeout=timeout_seconds, stream=True) as response:
-    
-            response.raise_for_status()
-
-            logger.info(f"Saving to {output_file}")
-            total_size = int(response.headers.get("content-length", 0))
-            total_size / chunk_size
-
-            with output_file.open("wb") as file_desc, tqdm(
-                total=total_size, unit="B", unit_scale=True, unit_divisor=chunk_size, desc=output_file.name
-            ) as pbar:
-                for chunk in response.iter_content(chunk_size=chunk_size):
-                    pbar.update(len(chunk))
-                    file_desc.write(chunk)
-
-            msg = f"Downloaded to {output_file}"
-            logger.info(msg)
-            
-    except requests.exceptions.Timeout as e:
-        msg = "Timed out connecting to server"
-        logger.error(msg)
-        raise Exception(msg) from e
-
-    return output_file
-
-
 async def download_file(
     url: str,
     output_file: Path,
