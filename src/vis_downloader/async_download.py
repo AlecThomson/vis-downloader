@@ -21,6 +21,8 @@ T = TypeVar("T")
 
 logger.setLevel(logging.INFO)
 
+CASDATAP: TapPlus = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
+            
 
 @dataclass
 class DownloadOptions:
@@ -33,6 +35,9 @@ class DownloadOptions:
     """Download the evaluation file that contains the holography"""
     max_workers: int = 1
     """The maximum number of download workers to use"""
+    log_only: bool = False
+    """Simply log the URLs to download. Don't download."""
+
 
 # Stolen from https://stackoverflow.com/a/61478547
 async def gather_with_limit(
@@ -61,21 +66,39 @@ async def gather_with_limit(
         await tqdm.gather(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
     )
 
-async def get_staging_url(sbid: int) -> Table:
-    tap = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
-    query_str = f"SELECT * FROM ivoa.obscore where obs_id='ASKAP-{sbid}' AND dataproduct_type='visibility'"
-    msg = f"Querying CASDA for {sbid}"
-    logger.info(msg)
-    msg = f"Query: {query_str}"
-    logger.debug(msg)
-    job = await asyncio.to_thread(tap.launch_job_async, query_str)
+from typing import Literal
+async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vis") -> Table:
+    
+    if mode == "vis":
+        query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}'"
+    elif mode == "holography":
+        query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}'"
+    else:
+        raise ValueError(f"Unknown {mode=}")
+    
+    logger.info(f"Querying CASDA for {sbid=} {mode=}")
+    
+    job = await asyncio.to_thread(CASDATAP.launch_job_async, query_str)
     results = job.get_results()
 
     if results is None:
-        msg = f"Query was {query_str}"
-        logger.error(msg)
-        msg = "No results found!"
-        raise ValueError(msg)
+        raise ValueError(f"Failed to find holography for {sbid=}")
+    
+    return results
+
+async def get_staging_url(
+    sbid: int,
+    download_holography: bool = False
+) -> Table:
+    
+    results = await _get_holography_url(sbid=sbid)
+    logger.info(results)
+    logger.info(type(results))
+    
+    if download_holography:
+        results = await _get_holography_url(sbid=sbid, mode="holography")
+        logger.info(results)
+        logger.info(type(results)) 
     
     return results
 
@@ -227,12 +250,16 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        result_table: Table = await get_staging_url(sbid)
+        result_table: Table = await get_staging_url(sbid, )
+        
+        if download_options.log_only:
+            logger.info(result_table)
+            continue
         
         for row in result_table:
             coros.append(
                 download_sbid_from_casda(
-                    sbid=sbid, row=row, output_dir=output_dir, casda=casda
+                    sbid=sbid, row=row, output_dir=download_options.output_dir, casda=casda
                 )
             )
     
@@ -240,11 +267,11 @@ async def get_cutouts_from_casda(
     logger.info(f"{coros=}")
     logger.info(f"{len(coros)=}")
     
-    paths = await gather_with_limit(max_workers, *coros, desc="Download")
+    paths = await gather_with_limit(download_options.max_workers, *coros, desc="Download")
     
-    if extract_tar:
+    if download_options.extract_tar:
         coros = [asyncio.to_thread(extract_tarball, in_path=path) for path in paths]
-        paths = await gather_with_limit(max_workers, *coros, desc="Extracting tarballs")
+        paths = await gather_with_limit(download_options.max_workers, *coros, desc="Extracting tarballs")
     
     return paths
 
@@ -258,6 +285,7 @@ def main() -> None:
     parser.add_argument("--max-workers", type=int, help="Number of workers", default=None)
     parser.add_argument("--extract-tar", action="store_true", help="If a file is a tarball attempt to extract it. This removes the original tar file if successful.")
     parser.add_argument("--download-holography", action="store_true", help="Download the evaluation files that contain the holography data")
+    parser.add_argument("--log-only", action="store_true")    
     
     args = parser.parse_args()
     
@@ -265,13 +293,13 @@ def main() -> None:
         output_dir=args.output_dir,
         extract_tar=args.extract_tar,
         download_holography=args.download_holography,
-        max_workers=args.max_workers
+        max_workers=args.max_workers,
+        log_only=args.log_only,
     )
     
     asyncio.run(
         get_cutouts_from_casda(
             sbid_list=args.sbids,
-            output_ir=args.output_dir,
             username=args.username,
             store_password=args.store_password,
             reenter_password=args.reenter_password,
