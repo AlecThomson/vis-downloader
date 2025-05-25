@@ -4,6 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Awaitable, TypeVar, cast
+from dataclasses import dataclass
 
 import os
 import aiohttp
@@ -21,6 +22,17 @@ T = TypeVar("T")
 logger.setLevel(logging.INFO)
 
 
+@dataclass
+class DownloadOptions:
+    """options to use for downloading of CASDA SBID data"""
+    output_dir: Path | None = None
+    """Output directory to write files to. If None output directory is built from the current working directory and SBID befing downloaded. Defaults to None."""
+    extract_tar: bool = False
+    """Extract tarballs at the end of downloading"""
+    download_holography: bool = False
+    """Download the evaluation file that contains the holography"""
+    max_workers: int = 1
+    """The maximum number of download workers to use"""
 
 # Stolen from https://stackoverflow.com/a/61478547
 async def gather_with_limit(
@@ -199,13 +211,14 @@ def extract_tarball(in_path: Path) -> Path:
 
 async def get_cutouts_from_casda(
     sbid_list: list[int],
-    output_dir: Path | None = None,
     username: str | None = None,
     store_password: bool = False,
     reenter_password: bool = False,
-    max_workers: int | None = None,
-    extract_tar: bool = False
+    download_options: DownloadOptions | None = None
 ) -> list[Path]:
+    if download_options is None:
+        download_options = DownloadOptions()
+    
     casda = casda_login(
         username=username,
         store_password=store_password,
@@ -244,18 +257,25 @@ def main() -> None:
     parser.add_argument("--reenter-password", action="store_true", help="Reenter password")
     parser.add_argument("--max-workers", type=int, help="Number of workers", default=None)
     parser.add_argument("--extract-tar", action="store_true", help="If a file is a tarball attempt to extract it. This removes the original tar file if successful.")
+    parser.add_argument("--download-holography", action="store_true", help="Download the evaluation files that contain the holography data")
+    
     args = parser.parse_args()
     
-
+    download_options = DownloadOptions(
+        output_dir=args.output_dir,
+        extract_tar=args.extract_tar,
+        download_holography=args.download_holography,
+        max_workers=args.max_workers
+    )
+    
     asyncio.run(
         get_cutouts_from_casda(
             sbid_list=args.sbids,
-            output_dir=args.output_dir,
+            output_ir=args.output_dir,
             username=args.username,
             store_password=args.store_password,
             reenter_password=args.reenter_password,
-            max_workers=args.max_workers,
-            extract_tar=args.extract_tar
+            download_options=download_options
         )
     )
 
