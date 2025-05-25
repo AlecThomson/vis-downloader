@@ -70,9 +70,9 @@ from typing import Literal
 async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vis") -> Table:
     
     if mode == "vis":
-        query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}'"
+        query_str = f"SELECT TOP 10000 * FROM ivoa.obscore where obs_id='ASKAP-{sbid}'"
     elif mode == "holography":
-        query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}'"
+        query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}' and format='calibration'"
     else:
         raise ValueError(f"Unknown {mode=}")
     
