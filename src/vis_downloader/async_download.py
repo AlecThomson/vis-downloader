@@ -257,7 +257,7 @@ def extract_tarball(in_path: Path) -> Path:
 
     with tarfile.open(name=in_path, mode="r") as tar:
         for member in tar.getmembers():
-            if member.islink():
+            if not member.isfile():
                 continue
             
             tar.extract(member, in_path.parent, filter="data")
