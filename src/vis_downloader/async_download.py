@@ -271,6 +271,9 @@ def extract_tarball(in_path: Path) -> Path:
     
     return in_path.parent
 
+async def iterator(items: list[T]) -> T:
+    for item in items:
+        yield item
 
 async def get_cutouts_from_casda(
     sbid_list: list[int],
@@ -312,14 +315,15 @@ async def get_cutouts_from_casda(
         paths = []
         outer_semaphore = asyncio.Semaphore(download_options.max_workers)
         inner_semaphore = asyncio.Semaphore(12)
-        for row in result_table:
+        
+        async for row in iterator(result_table):
             async with outer_semaphore:
                 path = await stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 )
             async with inner_semaphore:
                 if download_options.extract_tar:
-                    path = await asyncio.to_thread(extract_tarball(in_path=path))
+                    path = await asyncio.to_thread(extract_tarball, in_path=path)
     
                 paths.append(path)
                 
