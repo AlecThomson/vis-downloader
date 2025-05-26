@@ -208,16 +208,17 @@ async def download_file(
 
 
 async def stage_and_download(
-        result_table: Row,
-        casda: CasdaClass,
-        output_dir: Path | None = None,
-        
+    sbid: int,
+    result_table: Row,
+    casda: CasdaClass,
+    output_dir: Path | None = None,      
 ) -> Path:
     """Trigger CASDA to stage the data, and then download it once
     it has been staged. The `result_table` is generated via the TAQL
     query.
 
     Args:
+        sbid (int): The SBID of the data being downloaded
         result_table (Row): A data time to download, including its url and file name
         casda (CasdaClass): An activate CASDA session that has passed user authentication
         output_dir (Path | None, optional): The location to write the data to. If None data will be downloaded into a folder for the SBID. Defaults to None.
