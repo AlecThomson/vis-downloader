@@ -257,13 +257,12 @@ def extract_tarball(in_path: Path) -> Path:
 
     with tarfile.open(name=in_path, mode="r") as tar:
         for member in tar.getmembers():
+            # Some tarballs have symlinks that point to absolute paths
+            # extractall() falls over on these
             if not member.isfile():
                 continue
             
             tar.extract(member, in_path.parent, filter="data")
-
-    # with tarfile.open(name=in_path) as open_tarfile:
-    #     open_tarfile.extractall(path=in_path.parent, filter="data")
 
     in_path.unlink()
     
