@@ -255,8 +255,15 @@ def extract_tarball(in_path: Path) -> Path:
 
     logger.info(f"Extracting {in_path=}")
 
-    with tarfile.open(name=in_path) as open_tarfile:
-        open_tarfile.extractall(path=in_path.parent, filter="data")
+    with tarfile.open(name=in_path, mode="r") as tar:
+        for member in tar.getmembers():
+            if member.islink():
+                continue
+            
+            tar.extract(member, in_path.parent)
+
+    # with tarfile.open(name=in_path) as open_tarfile:
+    #     open_tarfile.extractall(path=in_path.parent, filter="data")
 
     in_path.unlink()
     
