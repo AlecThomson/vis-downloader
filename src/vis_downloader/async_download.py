@@ -310,11 +310,13 @@ async def get_cutouts_from_casda(
             continue
         
         paths = []
+        outer_semaphore = asyncio.Semaphore(download_options.max_workers)
         inner_semaphore = asyncio.Semaphore(12)
-        coros = [stage_and_download(
+        for row in result_table:
+            async with outer_semaphore:
+                path = stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
-                ) for row in result_table]
-        async for path in gather_with_limit(coros, as_completed=True):
+                )
             async with inner_semaphore:
                 if download_options.extract_tar:
                     path = await asyncio.to_thread(extract_tarball(in_path=path))
