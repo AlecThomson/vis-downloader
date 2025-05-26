@@ -260,7 +260,7 @@ def extract_tarball(in_path: Path) -> Path:
             if member.islink():
                 continue
             
-            tar.extract(member, in_path.parent)
+            tar.extract(member, in_path.parent, filter="data")
 
     # with tarfile.open(name=in_path) as open_tarfile:
     #     open_tarfile.extractall(path=in_path.parent, filter="data")
