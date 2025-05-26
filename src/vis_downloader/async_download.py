@@ -113,6 +113,8 @@ async def get_files_to_download(
     Returns:
         Table: Result set of matching files. Should multuple requests be made the intersection of columns between tables is returned.
     """
+    from astropy.table import vstack
+    
     tables: list[Table] = []
     results = await _get_holography_url(sbid=sbid)
     tables.append(results)
@@ -121,7 +123,6 @@ async def get_files_to_download(
         results = await _get_holography_url(sbid=sbid, mode="holography")
         tables.append(results)
     
-    from astropy.table import vstack
     results = vstack(tables, join_type="inner")
     return results
 
@@ -247,7 +248,6 @@ def extract_tarball(in_path: Path) -> Path:
     Returns:
         Path: Directory containing the extracted files
     """
-
     import tarfile
 
     if not tarfile.is_tarfile(in_path):
