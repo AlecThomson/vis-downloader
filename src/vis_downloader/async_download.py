@@ -321,11 +321,10 @@ async def get_cutouts_from_casda(
             path = await stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 )
-            async with inner_semaphore:
-                if download_options.extract_tar:
+            if download_options.extract_tar:
                     path = await asyncio.to_thread(extract_tarball, in_path=path)
     
-                paths.append(path)
+            paths.append(path)
                 
     return paths
 
