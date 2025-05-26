@@ -272,7 +272,8 @@ def extract_tarball(in_path: Path) -> Path:
     return in_path.parent
 
 async def iterator(items: list[T]) -> T:
-    for item in items:
+    for idx, item in enumerate(items):
+        logger.info(f"Yielding {idx}")
         yield item
 
 async def get_cutouts_from_casda(
