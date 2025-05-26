@@ -70,7 +70,7 @@ from typing import Literal
 async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vis") -> Table:
     
     if mode == "vis":
-        query_str = f"SELECT TOP 10000 * FROM ivoa.obscore where obs_id='ASKAP-{sbid}'"
+        query_str = f"SELECT TOP 10000 * FROM ivoa.obscore where obs_id='ASKAP-{sbid}' AND dataproduct_type='visibility'"
     elif mode == "holography":
         query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}' and format='calibration'"
     else:
@@ -86,20 +86,29 @@ async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vi
     
     return results
 
-async def get_staging_url(
+async def get_files_to_download(
     sbid: int,
     download_holography: bool = False
 ) -> Table:
-    
+    """Lookup in CASDA files to download for a specified SBID.
+
+    Args:
+        sbid (int): The SBID to download
+        download_holography (bool, optional): Whether holography data needs to be downloaded. Defaults to False.
+
+    Returns:
+        Table: Result set of matching files.
+    """
+    tables: list[Table] = []
     results = await _get_holography_url(sbid=sbid)
-    logger.info(results)
-    logger.info(type(results))
+    tables.append(results)
     
     if download_holography:
         results = await _get_holography_url(sbid=sbid, mode="holography")
-        logger.info(results)
-        logger.info(type(results)) 
+        tables.append(results)
     
+    from astropy.table import vstack
+    results = vstack(tables, join_type="inner")
     return results
 
 def get_download_url(result_row: Row, casda: CasdaClass) -> str:
@@ -117,8 +126,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         str: Download URL
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = casda.stage_data(Table(result_row)
-    )
+    url_list: list[str] = casda.stage_data(Table(result_row))
     
 
     good_url_list = []
@@ -250,7 +258,7 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        result_table: Table = await get_staging_url(sbid, )
+        result_table: Table = await get_files_to_download(sbid, download_holography=download_options.download_holography)
         
         if download_options.log_only:
             logger.info(result_table)
