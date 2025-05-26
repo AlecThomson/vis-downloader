@@ -231,7 +231,7 @@ async def stage_and_download(
         output_dir.mkdir(parents=True, exist_ok=True)
     
     
-    url = await asyncio.to_thread(get_download_url, result_table, casda)
+    url = await asyncio.to_thread(get_download_url, result_row, casda)
     output_file = output_dir / result_row["filename"]
     
     return await download_file(url, output_file)
