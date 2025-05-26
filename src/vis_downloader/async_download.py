@@ -314,7 +314,7 @@ async def get_cutouts_from_casda(
         inner_semaphore = asyncio.Semaphore(12)
         for row in result_table:
             async with outer_semaphore:
-                path = stage_and_download(
+                path = await stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 )
             async with inner_semaphore:
