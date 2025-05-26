@@ -209,7 +209,7 @@ async def download_file(
 
 async def stage_and_download(
     sbid: int,
-    result_table: Row,
+    result_row: Row,
     casda: CasdaClass,
     output_dir: Path | None = None,      
 ) -> Path:
@@ -219,7 +219,7 @@ async def stage_and_download(
 
     Args:
         sbid (int): The SBID of the data being downloaded
-        result_table (Row): A data time to download, including its url and file name
+        result_row (Row): A data row to download, including its url and file name
         casda (CasdaClass): An activate CASDA session that has passed user authentication
         output_dir (Path | None, optional): The location to write the data to. If None data will be downloaded into a folder for the SBID. Defaults to None.
 
@@ -232,7 +232,7 @@ async def stage_and_download(
     
     
     url = await asyncio.to_thread(get_download_url, result_table, casda)
-    output_file = output_dir / result_table["filename"]
+    output_file = output_dir / result_row["filename"]
     
     return await download_file(url, output_file)
 
