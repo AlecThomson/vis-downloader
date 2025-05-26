@@ -68,7 +68,21 @@ async def gather_with_limit(
 
 from typing import Literal
 async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vis") -> Table:
+    """Internal function to generate and execute a TAQL query.
+
+    Args:
+        sbid (int): The SBID we want files for
+        mode (Literal[&quot;vis&quot;, &quot;holography&quot;], optional): Wheter visibilities or holography will be downloaded. Defaults to "vis".
+
+    Raises:
+        ValueError: Raised if `mode` is not known
+        ValueError: Raised if the remote request returns failed
+
+    Returns:
+        Table: Matching results of the TAQL request
+    """
     
+        
     if mode == "vis":
         query_str = f"SELECT TOP 10000 * FROM ivoa.obscore where obs_id='ASKAP-{sbid}' AND dataproduct_type='visibility'"
     elif mode == "holography":
@@ -97,7 +111,7 @@ async def get_files_to_download(
         download_holography (bool, optional): Whether holography data needs to be downloaded. Defaults to False.
 
     Returns:
-        Table: Result set of matching files.
+        Table: Result set of matching files. Should multuple requests be made the intersection of columns between tables is returned.
     """
     tables: list[Table] = []
     results = await _get_holography_url(sbid=sbid)
@@ -154,25 +168,20 @@ async def download_file(
     download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 1000000,
 ) -> Path:
-    """Download a file from a given URL using asyncio.
+    """Download a file from CASDA, streaming it to its final location.
 
-    Parameters
-    ----------
-    url : str
-        URL to download.
-    output_file : Path
-        Output file path.
-    connect_timeout_seconds : int, optional
-        Number of seconds to wait to establish connection. Defaults to 30.
-    download_timeout_seconds : int, optional
-        Allowed length of time to dowload a file, in seconds. Defults to 12 hours.
-    chunk_size : int, optional
-        Chunks of data to download, by default 1000
-    
-    Raises
-    ------
-    IonexError
-        If the download times out.
+    Args:
+        url (str): The URL describing the remote resources to download
+        output_file (Path): The location to write the file to.
+        connect_timeout_seconds (int, optional): The acceptable amount of time to establish a connection to server. Defaults to 60.
+        download_timeout_seconds (int, optional): The acceptable amoutn of time to wait for the download to finish. Defaults to 60*60*12.
+        chunk_size (int, optional): Size of data blocks to store in memory before flushing to disk. Defaults to 1000000.
+
+    Raises:
+        ValueError: A status code other than 200 is returned when accessing the server
+
+    Returns:
+        Path: Location of the file that was written to
     """
     msg = f"Using aiohttp, Downloading from {url}"
     logger.info(msg)
@@ -200,30 +209,43 @@ async def download_file(
 
 async def stage_and_download(
         result_table: Row,
-        output_dir: Path,
         casda: CasdaClass,
+        output_dir: Path | None = None,
+        
 ) -> Path:
+    """Trigger CASDA to stage the data, and then download it once
+    it has been staged. The `result_table` is generated via the TAQL
+    query.
+
+    Args:
+        result_table (Row): A data time to download, including its url and file name
+        casda (CasdaClass): An activate CASDA session that has passed user authentication
+        output_dir (Path | None, optional): The location to write the data to. If None data will be downloaded into a folder for the SBID. Defaults to None.
+
+    Returns:
+        Path: Path to the file that has been downloaded
+    """
+    if output_dir is None:
+        output_dir = Path(os.getcwd()) / str(sbid)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    
+    
     url = await asyncio.to_thread(get_download_url, result_table, casda)
     output_file = output_dir / result_table["filename"]
     
     return await download_file(url, output_file)
 
-async def download_sbid_from_casda(
-        sbid: int,
-        row,
-        output_dir: Path,
-        casda: CasdaClass,
-) -> list[Awaitable[Path]]:
-    
-    if output_dir is None:
-        output_dir = Path(os.getcwd()) / str(sbid)
-        output_dir.mkdir(parents=True, exist_ok=True)
-    
-    path = await stage_and_download(row, output_dir, casda)
-
-    return path
 
 def extract_tarball(in_path: Path) -> Path:
+    """Extract the contents of a tarball, and delete it once extracted. 
+    Files are extracted alongside the tarball.
+
+    Args:
+        in_path (Path): Location of the tarball. 
+
+    Returns:
+        Path: Directory containing the extracted files
+    """
 
     import tarfile
 
@@ -247,6 +269,19 @@ async def get_cutouts_from_casda(
     reenter_password: bool = False,
     download_options: DownloadOptions | None = None
 ) -> list[Path]:
+    """Download visibilities and other products for a nominated set of SBIDs
+    from CASDA.
+
+    Args:
+        sbid_list (list[int]): Set of SBIDs to download data for
+        username (str | None, optional): The username to use to authenticate with. Defaults to None.
+        store_password (bool, optional): Whether the password should be stored in a keyring. Defaults to False.
+        reenter_password (bool, optional): Force the password to be entered. Defaults to False.
+        download_options (DownloadOptions | None, optional): Settings to use while downloading. Defaults to None.
+
+    Returns:
+        list[Path]: A list of files downloaded
+    """
     if download_options is None:
         download_options = DownloadOptions()
     
@@ -266,7 +301,7 @@ async def get_cutouts_from_casda(
         
         for row in result_table:
             coros.append(
-                download_sbid_from_casda(
+                stage_and_download(
                     sbid=sbid, row=row, output_dir=download_options.output_dir, casda=casda
                 )
             )
