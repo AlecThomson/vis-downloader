@@ -13,7 +13,6 @@ from astropy.table import Row, Table
 from astroquery.casda import CasdaClass
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
-from tqdm import tqdm as sync_tqdm
 
 from vis_downloader.casda_login import login as casda_login
 
@@ -41,7 +40,7 @@ class DownloadOptions:
 
 # Stolen from https://stackoverflow.com/a/61478547
 async def gather_with_limit(
-    limit: int | None, *coros: Awaitable[T], desc: str | None = None
+    limit: int | None, *coros: Awaitable[T], desc: str | None = None, as_completed: bool = False
 ) -> list[T]:
     """Gather with a limit on the number of coroutines running at once.
 
@@ -52,8 +51,10 @@ async def gather_with_limit(
     Returns:
         Awaitable: The result of the coroutines
     """
+    tqdm_func = tqdm.as_completed if as_completed else tqdm.gather
+    
     if limit is None:
-        return cast(list[T], await tqdm.gather(*coros, maxinterval=100000000,  desc=desc))
+        return cast(list[T], await tqdm_func(*coros, maxinterval=100000000,  desc=desc))
 
     semaphore = asyncio.Semaphore(limit)
 
@@ -63,8 +64,10 @@ async def gather_with_limit(
 
     return cast(
         list[T],
-        await tqdm.gather(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
+        await tqdm_func(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
     )
+
+
 
 from typing import Literal
 async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vis") -> Table:
@@ -306,23 +309,18 @@ async def get_cutouts_from_casda(
             logger.info(result_table)
             continue
         
-        for row in result_table:
-            coros.append(
-                stage_and_download(
+        paths = []
+        inner_semaphore = asyncio.Semaphore(12)
+        coros = [stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
-                )
-            )
+                ) for row in result_table]
+        for path in gather_with_limit(coros, as_completed=True):
+            with inner_semaphore:
+                if download_options.extract_tar:
+                    path = await asyncio.to_thread(extract_tarball(in_path=path))
     
-
-    logger.info(f"{coros=}")
-    logger.info(f"{len(coros)=}")
-    
-    paths = await gather_with_limit(download_options.max_workers, *coros, desc="Download")
-    
-    if download_options.extract_tar:
-        coros = [asyncio.to_thread(extract_tarball, in_path=path) for path in paths]
-        paths = await gather_with_limit(download_options.max_workers, *coros, desc="Extracting tarballs")
-    
+                paths.append(path)
+                
     return paths
 
 def main() -> None:
