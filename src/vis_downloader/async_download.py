@@ -310,7 +310,7 @@ async def get_cutouts_from_casda(
         for row in result_table:
             coros.append(
                 stage_and_download(
-                    sbid=sbid, row=row, output_dir=download_options.output_dir, casda=casda
+                    sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 )
             )
     
