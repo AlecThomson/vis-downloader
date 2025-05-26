@@ -165,7 +165,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
 async def download_file(
     url: str,
     output_file: Path,
-    connect_timeout_seconds: int = 60, 
+    connect_timeout_seconds: int = 120, 
     download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 1000000,
 ) -> Path:
