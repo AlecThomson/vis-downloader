@@ -236,7 +236,7 @@ async def download_file(
         url
     ) as response:
         if response.status != ok_status:
-            msg = f"{response.status=}, indicating the request was no successful."
+            msg = f"{response.status=}, indicating the request was not successful."
             raise ValueError(
                 msg,
             )
