@@ -21,7 +21,7 @@ T = TypeVar("T")
 logger.setLevel(logging.INFO)
 
 CASDATAP: TapPlus = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
-SEMAPHORES: dict[str, asyncio.Semaphore] = None
+SEMAPHORES: dict[str, asyncio.Semaphore] = {}
 
 conf.timeout = 120 # Overwrite the default 20 seconds       
 
