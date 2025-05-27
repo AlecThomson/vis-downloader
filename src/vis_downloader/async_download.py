@@ -21,6 +21,7 @@ T = TypeVar("T")
 logger.setLevel(logging.INFO)
 
 CASDATAP: TapPlus = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
+SEMAPHORES: dict[str, asyncio.Semaphore] = None
 
 conf.timeout = 120 # Overwrite the default 20 seconds       
 
@@ -272,18 +273,23 @@ def extract_tarball(in_path: Path) -> Path:
     return in_path.parent
 
 
-async def coros_with_limits(coros: Awaitable[T], max_limit: int) -> Awaitable[T]:
-    """Place a limiter on a set of co-routines via an asynio Semaphore
+async def coros_with_limits(coros: Awaitable[T], max_limit: int, key: str | None = None) -> Awaitable[T]:
+    """Place a limiter on a set of co-routines via an asynio Semaphore. The `key` is used to
+    denote different semaphores from one another, or use a previously created semaphore.
 
     Args:
         coros (Awaitable[T]): The co-routines that will have some limiter placed
         max_limit (int): The maximum limit of workers
+        key (str | None, optional): The semaphore to use for this limiter. If None or the `key` has not been used one is created. Defaults to None/
 
     Returns:
         Awaitable[T]: New routines with a collective semaphore context applied
     """
 
-    semaphore = asyncio.Semaphore(max_limit)
+    semaphore = SEMAPHORES.get(key, None)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(max_limit)
+        SEMAPHORES[key] = semaphore
     
     async def _limit(_coro):
         async with semaphore:
@@ -334,7 +340,8 @@ async def get_cutouts_from_casda(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 ) for row in result_table
             ],
-            max_limit=download_options.max_workers
+            max_limit=download_options.max_workers,
+            key="sbid"
         )
         for item in asyncio.as_completed(coros):
             path = await item
