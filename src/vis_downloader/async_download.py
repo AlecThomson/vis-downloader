@@ -72,7 +72,7 @@ async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vi
 
     Args:
         sbid (int): The SBID we want files for
-        mode (Literal[&quot;vis&quot;, &quot;holography&quot;], optional): Wheter visibilities or holography will be downloaded. Defaults to "vis".
+        mode (Literal["vis, "holography"], optional): Wheter visibilities or holography will be downloaded. Defaults to "vis".
 
     Raises:
         ValueError: Raised if `mode` is not known
@@ -174,7 +174,7 @@ async def download_file(
     Args:
         url (str): The URL describing the remote resources to download
         output_file (Path): The location to write the file to.
-        connect_timeout_seconds (int, optional): The acceptable amount of time to establish a connection to server. Defaults to 60.
+        connect_timeout_seconds (int, optional): The acceptable amount of time to establish a connection to server. Defaults to 43200.
         download_timeout_seconds (int, optional): The acceptable amoutn of time to wait for the download to finish. Defaults to 60*60*12.
         chunk_size (int, optional): Size of data blocks to store in memory before flushing to disk. Defaults to 1000000.
 
