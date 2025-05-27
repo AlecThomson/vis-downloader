@@ -22,7 +22,7 @@ def login(
             Defaults to False.
         reenter_password (bool, optional): Asks for the password even if it is already
             stored in the keyring. This is the way to overwrite an already stored
-            passwork on the keyring. Defaults to False.
+            password on the keyring. Defaults to False.
 
     Returns:
         CasdaClass: CASDA class
