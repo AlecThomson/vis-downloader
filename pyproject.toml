@@ -1,6 +1,7 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
 
 [project]
 name = "vis-downloader"
@@ -46,8 +47,9 @@ Documentation = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downlo
 Issues = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downloader/issues"
 Source = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downloader"
 
-[tool.hatch.version]
-path = "src/vis_downloader/__about__.py"
+[tool.hatch]
+version.source = "vcs"
+build.hooks.vcs.version-file = "src/vis_downloader/_version.py"
 
 [tool.hatch.envs.types]
 extra-dependencies = [
@@ -117,3 +119,7 @@ ignore = [
 ]
 preview = true
 isort.required-imports = ["from __future__ import annotations"]
+
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ALL"]
