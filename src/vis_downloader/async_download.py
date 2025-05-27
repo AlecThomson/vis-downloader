@@ -40,7 +40,7 @@ class DownloadOptions:
 
 # Stolen from https://stackoverflow.com/a/61478547
 async def gather_with_limit(
-    limit: int | None, *coros: Awaitable[T], desc: str | None = None, as_completed: bool = False
+    limit: int | None, *coros: Awaitable[T], desc: str | None = None
 ) -> list[T]:
     """Gather with a limit on the number of coroutines running at once.
 
@@ -51,10 +51,9 @@ async def gather_with_limit(
     Returns:
         Awaitable: The result of the coroutines
     """
-    tqdm_func = tqdm.as_completed if as_completed else tqdm.gather
     
     if limit is None:
-        return cast(list[T], await tqdm_func(*coros, maxinterval=100000000,  desc=desc))
+        return cast(list[T], await tqdm.gather(*coros, maxinterval=100000000,  desc=desc))
 
     semaphore = asyncio.Semaphore(limit)
 
@@ -64,7 +63,7 @@ async def gather_with_limit(
 
     return cast(
         list[T],
-        await tqdm_func(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
+        await tqdm.gather(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
     )
 
 
@@ -271,24 +270,17 @@ def extract_tarball(in_path: Path) -> Path:
     
     return in_path.parent
 
-async def iterator(items: list[T]) -> T:
-    for idx, item in enumerate(items):
-        logger.info(f"Yielding {idx}")
-        yield item
 
-async def as_complete_with_limits(coros):
+async def coros_with_limits(coros, max_limit: int):
     
-    print(f"{len(coros)} {coros[0]}")
-    
-    semaphore = asyncio.Semaphore(12)
+    semaphore = asyncio.Semaphore(max_limit)
     
     async def _limit(_coro):
         async with semaphore:
             return await _coro
         
-    a = [_limit(coro) for coro in coros]
-    return a
-
+    return [_limit(coro) for coro in coros]
+    
 async def get_cutouts_from_casda(
     sbid_list: list[int],
     username: str | None = None,
@@ -327,17 +319,14 @@ async def get_cutouts_from_casda(
         
         paths = []
         
-        coros = await as_complete_with_limits([
+        coros = await coros_with_limits([
             stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 ) for row in result_table
         ])
-        print(f"In main {coros=}")
         for item in asyncio.as_completed(coros):
             path = await item
-            logger.info(path)
-            paths.append(path)
-        
+            
             if download_options.extract_tar:
                     path = await asyncio.to_thread(extract_tarball, in_path=path)
     
