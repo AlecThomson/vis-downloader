@@ -273,7 +273,7 @@ async def stage_and_download(
     Args:
         sbid (int): The SBID of the data being downloaded
         result_row (Row): A data row to download, including its url and file name
-        casda (CasdaClass): An activate CASDA session that has passed user
+        casda (CasdaClass): An active CASDA session that has passed user
             authentication
         output_dir (Path | None, optional): The location to write the data to.
             If None data will be downloaded into a folder for the SBID. Defaults to None
