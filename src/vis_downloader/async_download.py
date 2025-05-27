@@ -271,8 +271,17 @@ def extract_tarball(in_path: Path) -> Path:
     return in_path.parent
 
 
-async def coros_with_limits(coros, max_limit: int):
-    
+async def coros_with_limits(coros: Awaitable[T], max_limit: int) -> Awaitable[T]:
+    """Place a limiter on a set of co-routines via an asynio Semaphore
+
+    Args:
+        coros (Awaitable[T]): The co-routines that will have some limiter placed
+        max_limit (int): The maximum limit of workers
+
+    Returns:
+        Awaitable[T]: New routines with a collective semaphore context applied
+    """
+
     semaphore = asyncio.Semaphore(max_limit)
     
     async def _limit(_coro):
