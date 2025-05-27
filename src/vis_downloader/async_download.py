@@ -349,9 +349,9 @@ async def get_cutouts_from_casda(
             if download_options.extract_tar:
                     path = await asyncio.to_thread(extract_tarball, in_path=path)
     
-            paths.append(path)
+    #         paths.append(path)
                 
-    return paths
+    # return paths
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
