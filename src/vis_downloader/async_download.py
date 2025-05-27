@@ -338,14 +338,10 @@ async def get_cutouts_from_casda(
             logger.info(path)
             paths.append(path)
         
-        # async for row in iterator(result_table):
-        #     path = await stage_and_download(
-        #             sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
-        #         )
-        #     if download_options.extract_tar:
-        #             path = await asyncio.to_thread(extract_tarball, in_path=path)
+            if download_options.extract_tar:
+                    path = await asyncio.to_thread(extract_tarball, in_path=path)
     
-        #     paths.append(path)
+            paths.append(path)
                 
     return paths
 
