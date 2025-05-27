@@ -8,7 +8,7 @@ import logging
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Coroutine, Literal, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import aiohttp
 from astropy import log as logger
@@ -18,6 +18,9 @@ from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
 
 from vis_downloader.casda_login import login as casda_login
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Coroutine
 
 T = TypeVar("T")
 
@@ -232,9 +235,10 @@ async def download_file(
         connect=connect_timeout_seconds,
     )
     ok_status = 200
-    async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
-        url
-    ) as response:
+    async with (
+        aiohttp.ClientSession(timeout=timeout) as session,
+        session.get(url) as response,
+    ):
         if response.status != ok_status:
             msg = f"{response.status=}, indicating the request was not successful."
             raise ValueError(
@@ -243,13 +247,16 @@ async def download_file(
 
         total_size = int(response.headers.get("content-length", 0))
 
-        with output_file.open("wb") as file_desc, tqdm(
-            total=total_size,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-            desc=output_file.name,
-        ) as pbar:
+        with (
+            output_file.open("wb") as file_desc,
+            tqdm(
+                total=total_size,
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                desc=output_file.name,
+            ) as pbar,
+        ):
             async for chunk in response.content.iter_chunked(chunk_size):
                 pbar.update(len(chunk))
 
