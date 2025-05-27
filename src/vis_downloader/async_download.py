@@ -10,7 +10,7 @@ import os
 import aiohttp
 from astropy import log as logger
 from astropy.table import Row, Table
-from astroquery.casda import CasdaClass, Conf
+from astroquery.casda import CasdaClass, conf
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
 
