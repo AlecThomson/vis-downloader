@@ -10,7 +10,7 @@ import os
 import aiohttp
 from astropy import log as logger
 from astropy.table import Row, Table
-from astroquery.casda import CasdaClass
+from astroquery.casda import CasdaClass, conf
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
 
@@ -21,7 +21,8 @@ T = TypeVar("T")
 logger.setLevel(logging.INFO)
 
 CASDATAP: TapPlus = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
-            
+
+conf.timeout = 120 # Overwrite the default 20 seconds       
 
 @dataclass
 class DownloadOptions:
