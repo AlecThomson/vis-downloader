@@ -333,7 +333,9 @@ async def get_cutouts_from_casda(
             stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 ) for row in result_table
-        ])
+            ],
+            max_limit=download_options.max_workers
+        )
         for item in asyncio.as_completed(coros):
             path = await item
             
