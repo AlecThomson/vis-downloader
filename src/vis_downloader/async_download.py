@@ -276,6 +276,19 @@ async def iterator(items: list[T]) -> T:
         logger.info(f"Yielding {idx}")
         yield item
 
+async def as_complete_with_limits(coros):
+    
+    print(f"{len(coros)} {coros[0]}")
+    
+    semaphore = asyncio.Semaphore(12)
+    
+    async def _limit(_coro):
+        async with semaphore:
+            return await _coro
+        
+    a = [_limit(coro) for coro in coros]
+    return a
+
 async def get_cutouts_from_casda(
     sbid_list: list[int],
     username: str | None = None,
@@ -305,7 +318,6 @@ async def get_cutouts_from_casda(
         reenter_password=reenter_password,
     )
 
-    coros = []
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(sbid, download_holography=download_options.download_holography)
         
@@ -314,17 +326,26 @@ async def get_cutouts_from_casda(
             continue
         
         paths = []
-        outer_semaphore = asyncio.Semaphore(download_options.max_workers)
-        inner_semaphore = asyncio.Semaphore(12)
         
-        async for row in iterator(result_table):
-            path = await stage_and_download(
+        coros = await as_complete_with_limits([
+            stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
-                )
-            if download_options.extract_tar:
-                    path = await asyncio.to_thread(extract_tarball, in_path=path)
-    
+                ) for row in result_table
+        ])
+        print(f"In main {coros=}")
+        for item in asyncio.as_completed(coros):
+            path = await item
+            logger.info(path)
             paths.append(path)
+        
+        # async for row in iterator(result_table):
+        #     path = await stage_and_download(
+        #             sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
+        #         )
+        #     if download_options.extract_tar:
+        #             path = await asyncio.to_thread(extract_tarball, in_path=path)
+    
+        #     paths.append(path)
                 
     return paths
 
