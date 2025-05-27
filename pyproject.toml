@@ -7,7 +7,7 @@ name = "vis-downloader"
 dynamic = ["version"]
 description = ''
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = []
 authors = [
@@ -30,6 +30,15 @@ dependencies = [
   "requests",
   "tqdm",
   "aiohttp"
+]
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "mypy",
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "pytest"
 ]
 
 [project.urls]
