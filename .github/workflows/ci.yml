@@ -62,8 +62,9 @@ jobs:
 
       - name: Test package
         run: >-
-          python -m pytest -ra --cov --cov-report=xml --cov-report=term
-          --durations=20 --junitxml=junit.xml -o junit_family=legacy
+          python -m pytest -ra
+          # --cov --cov-report=xml --cov-report=term
+          # --durations=20 --junitxml=junit.xml -o junit_family=legacy
 
       # - name: Upload coverage reports to Codecov
       #   uses: codecov/codecov-action@v5
