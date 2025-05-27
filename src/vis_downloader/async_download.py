@@ -326,6 +326,8 @@ async def get_cutouts_from_casda(
         reenter_password=reenter_password,
     )
 
+    sbids_coros = []
+               
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(sbid, download_holography=download_options.download_holography)
         
@@ -333,25 +335,27 @@ async def get_cutouts_from_casda(
             logger.info(result_table)
             continue
         
-        paths = []
-        
-        coros = await coros_with_limits([
-            stage_and_download(
+        sbids_coros.extend([ stage_and_download(
                     sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 ) for row in result_table
-            ],
-            max_limit=download_options.max_workers,
-            key="sbid"
-        )
-        for item in asyncio.as_completed(coros):
-            path = await item
-            
-            if download_options.extract_tar:
-                    path = await asyncio.to_thread(extract_tarball, in_path=path)
+            ])
+        
+    paths = []
     
-    #         paths.append(path)
-                
-    # return paths
+    coros = await coros_with_limits(
+        sbids_coros,
+        max_limit=download_options.max_workers,
+        key="sbid"
+    )
+    for item in asyncio.as_completed(coros):
+        path = await item
+        
+        if download_options.extract_tar:
+                path = await asyncio.to_thread(extract_tarball, in_path=path)
+
+        paths.append(path)
+            
+    return paths
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download visibilities from CASDA for a given SBID")
