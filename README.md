@@ -61,7 +61,7 @@ options:
   -h, --help  show this help message and exit
 ```
 
-Note that you will also want to set the `CASDA_USERNAME` environment variable for non-iteractive use.
+Note that you will also want to set the `CASDA_USERNAME` environment variable for non-interactive use.
 
 ## License
 

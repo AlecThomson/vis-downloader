@@ -212,7 +212,7 @@ async def download_file(
         output_file (Path): The location to write the file to.
         connect_timeout_seconds (int, optional): The acceptable amount of time to
             establish a connection to server. Defaults to 43200.
-        download_timeout_seconds (int, optional): The acceptable amoutn of time to wait
+        download_timeout_seconds (int, optional): The acceptable amount of time to wait
             for the download to finish. Defaults to 60*60*12.
         chunk_size (int, optional): Size of data blocks to store in memory before
             flushing to disk. Defaults to 1000000.
