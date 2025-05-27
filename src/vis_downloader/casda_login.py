@@ -1,14 +1,16 @@
-"""Helper to login to CASDA and save credentials"""
+"""Helper to login to CASDA and save credentials."""
 
 from __future__ import annotations
 
-from astroquery.casda import CasdaClass, Casda
+import argparse
 import os
 
-import argparse
+from astroquery.casda import CasdaClass
+
 
 def login(
     username: str | None = None,
+    *,
     store_password: bool = False,
     reenter_password: bool = False,
 ) -> CasdaClass:
@@ -16,13 +18,17 @@ def login(
 
     Args:
         username (str | None, optional): CASDA username. Defaults to None.
-        store_password (bool, optional): Stores the password securely in your keyring. Defaults to False.
-        reenter_password (bool, optional): Asks for the password even if it is already stored in the keyring. This is the way to overwrite an already stored passwork on the keyring. Defaults to False.
+        store_password (bool, optional): Stores the password securely in your keyring.
+            Defaults to False.
+        reenter_password (bool, optional): Asks for the password even if it is already
+            stored in the keyring. This is the way to overwrite an already stored
+            passwork on the keyring. Defaults to False.
 
     Returns:
         CasdaClass: CASDA class
+
     """
-    casda: CasdaClass = Casda()
+    casda = CasdaClass()
     if username is None:
         username = os.environ.get("CASDA_USERNAME")
     if username is None:
@@ -36,7 +42,9 @@ def login(
 
     return casda
 
+
 def main() -> None:
+    """Run the main CLI."""
     parser = argparse.ArgumentParser(description="Login to CASDA and save credentials")
     parser.add_argument("username", help="Username for CASDA")
 
