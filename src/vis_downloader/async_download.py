@@ -4,15 +4,15 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Awaitable, TypeVar, cast
+from dataclasses import dataclass
 
 import os
 import aiohttp
 from astropy import log as logger
 from astropy.table import Row, Table
-from astroquery.casda import CasdaClass
+from astroquery.casda import CasdaClass, conf
 from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
-from tqdm import tqdm as sync_tqdm
 
 from vis_downloader.casda_login import login as casda_login
 
@@ -20,6 +20,23 @@ T = TypeVar("T")
 
 logger.setLevel(logging.INFO)
 
+CASDATAP: TapPlus = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
+            
+conf.timeout = 120 # Overwrite the default 20 seconds       
+
+@dataclass
+class DownloadOptions:
+    """options to use for downloading of CASDA SBID data"""
+    output_dir: Path | None = None
+    """Output directory to write files to. If None output directory is built from the current working directory and SBID befing downloaded. Defaults to None."""
+    extract_tar: bool = False
+    """Extract tarballs at the end of downloading"""
+    download_holography: bool = False
+    """Download the evaluation file that contains the holography"""
+    max_workers: int = 1
+    """The maximum number of download workers to use"""
+    log_only: bool = False
+    """Simply log the URLs to download. Don't download."""
 
 
 # Stolen from https://stackoverflow.com/a/61478547
@@ -49,22 +66,64 @@ async def gather_with_limit(
         await tqdm.gather(*(sem_coro(c) for c in coros), maxinterval=100000000, desc=desc),
     )
 
-async def get_staging_url(sbid: int) -> Table:
-    tap = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
-    query_str = f"SELECT * FROM ivoa.obscore where obs_id='ASKAP-{sbid}' AND dataproduct_type='visibility'"
-    msg = f"Querying CASDA for {sbid}"
-    logger.info(msg)
-    msg = f"Query: {query_str}"
-    logger.debug(msg)
-    job = await asyncio.to_thread(tap.launch_job_async, query_str)
+from typing import Literal
+async def _get_holography_url(sbid: int, mode: Literal["vis", "holography"] ="vis") -> Table:
+    """Internal function to generate and execute a TAQL query.
+
+    Args:
+        sbid (int): The SBID we want files for
+        mode (Literal["vis, "holography"], optional): Wheter visibilities or holography will be downloaded. Defaults to "vis".
+
+    Raises:
+        ValueError: Raised if `mode` is not known
+        ValueError: Raised if the remote request returns failed
+
+    Returns:
+        Table: Matching results of the TAQL request
+    """
+    
+        
+    if mode == "vis":
+        query_str = f"SELECT TOP 10000 * FROM ivoa.obscore where obs_id='ASKAP-{sbid}' AND dataproduct_type='visibility'"
+    elif mode == "holography":
+        query_str = f"SELECT TOP 10000 * FROM casda.observation_evaluation_file where sbid='{sbid}' and format='calibration'"
+    else:
+        raise ValueError(f"Unknown {mode=}")
+    
+    logger.info(f"Querying CASDA for {sbid=} {mode=}")
+    
+    job = await asyncio.to_thread(CASDATAP.launch_job_async, query_str)
     results = job.get_results()
 
     if results is None:
-        msg = f"Query was {query_str}"
-        logger.error(msg)
-        msg = "No results found!"
-        raise ValueError(msg)
+        raise ValueError(f"Failed to find holography for {sbid=}")
     
+    return results
+
+async def get_files_to_download(
+    sbid: int,
+    download_holography: bool = False
+) -> Table:
+    """Lookup in CASDA files to download for a specified SBID.
+
+    Args:
+        sbid (int): The SBID to download
+        download_holography (bool, optional): Whether holography data needs to be downloaded. Defaults to False.
+
+    Returns:
+        Table: Result set of matching files. Should multuple requests be made the intersection of columns between tables is returned.
+    """
+    from astropy.table import vstack
+    
+    tables: list[Table] = []
+    results = await _get_holography_url(sbid=sbid)
+    tables.append(results)
+    
+    if download_holography:
+        results = await _get_holography_url(sbid=sbid, mode="holography")
+        tables.append(results)
+    
+    results = vstack(tables, join_type="inner")
     return results
 
 def get_download_url(result_row: Row, casda: CasdaClass) -> str:
@@ -82,8 +141,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         str: Download URL
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = casda.stage_data(Table(result_row)
-    )
+    url_list: list[str] = casda.stage_data(Table(result_row))
     
 
     good_url_list = []
@@ -107,29 +165,24 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
 async def download_file(
     url: str,
     output_file: Path,
-    connect_timeout_seconds: int = 60, 
+    connect_timeout_seconds: int = 120, 
     download_timeout_seconds: int = 60*60*12, 
     chunk_size: int = 1000000,
 ) -> Path:
-    """Download a file from a given URL using asyncio.
+    """Download a file from CASDA, streaming it to its final location.
 
-    Parameters
-    ----------
-    url : str
-        URL to download.
-    output_file : Path
-        Output file path.
-    connect_timeout_seconds : int, optional
-        Number of seconds to wait to establish connection. Defaults to 30.
-    download_timeout_seconds : int, optional
-        Allowed length of time to dowload a file, in seconds. Defults to 12 hours.
-    chunk_size : int, optional
-        Chunks of data to download, by default 1000
-    
-    Raises
-    ------
-    IonexError
-        If the download times out.
+    Args:
+        url (str): The URL describing the remote resources to download
+        output_file (Path): The location to write the file to.
+        connect_timeout_seconds (int, optional): The acceptable amount of time to establish a connection to server. Defaults to 43200.
+        download_timeout_seconds (int, optional): The acceptable amoutn of time to wait for the download to finish. Defaults to 60*60*12.
+        chunk_size (int, optional): Size of data blocks to store in memory before flushing to disk. Defaults to 1000000.
+
+    Raises:
+        ValueError: A status code other than 200 is returned when accessing the server
+
+    Returns:
+        Path: Location of the file that was written to
     """
     msg = f"Using aiohttp, Downloading from {url}"
     logger.info(msg)
@@ -156,32 +209,45 @@ async def download_file(
 
 
 async def stage_and_download(
-        result_table: Row,
-        output_dir: Path,
-        casda: CasdaClass,
+    sbid: int,
+    result_row: Row,
+    casda: CasdaClass,
+    output_dir: Path | None = None,      
 ) -> Path:
-    url = await asyncio.to_thread(get_download_url, result_table, casda)
-    output_file = output_dir / result_table["filename"]
-    
-    return await download_file(url, output_file)
+    """Trigger CASDA to stage the data, and then download it once
+    it has been staged. The `result_table` is generated via the TAQL
+    query.
 
-async def download_sbid_from_casda(
-        sbid: int,
-        row,
-        output_dir: Path,
-        casda: CasdaClass,
-) -> list[Awaitable[Path]]:
-    
+    Args:
+        sbid (int): The SBID of the data being downloaded
+        result_row (Row): A data row to download, including its url and file name
+        casda (CasdaClass): An activate CASDA session that has passed user authentication
+        output_dir (Path | None, optional): The location to write the data to. If None data will be downloaded into a folder for the SBID. Defaults to None.
+
+    Returns:
+        Path: Path to the file that has been downloaded
+    """
     if output_dir is None:
         output_dir = Path(os.getcwd()) / str(sbid)
         output_dir.mkdir(parents=True, exist_ok=True)
     
-    path = await stage_and_download(row, output_dir, casda)
+    
+    url = await asyncio.to_thread(get_download_url, result_row, casda)
+    output_file = output_dir / result_row["filename"]
+    
+    return await download_file(url, output_file)
 
-    return path
 
 def extract_tarball(in_path: Path) -> Path:
+    """Extract the contents of a tarball, and delete it once extracted. 
+    Files are extracted alongside the tarball.
 
+    Args:
+        in_path (Path): Location of the tarball. 
+
+    Returns:
+        Path: Directory containing the extracted files
+    """
     import tarfile
 
     if not tarfile.is_tarfile(in_path):
@@ -189,8 +255,14 @@ def extract_tarball(in_path: Path) -> Path:
 
     logger.info(f"Extracting {in_path=}")
 
-    with tarfile.open(name=in_path) as open_tarfile:
-        open_tarfile.extractall(path=in_path.parent, filter="data")
+    with tarfile.open(name=in_path, mode="r") as tar:
+        for member in tar.getmembers():
+            # Some tarballs have symlinks that point to absolute paths
+            # extractall() falls over on these
+            if not member.isfile():
+                continue
+            
+            tar.extract(member, in_path.parent, filter="data")
 
     in_path.unlink()
     
@@ -199,13 +271,27 @@ def extract_tarball(in_path: Path) -> Path:
 
 async def get_cutouts_from_casda(
     sbid_list: list[int],
-    output_dir: Path | None = None,
     username: str | None = None,
     store_password: bool = False,
     reenter_password: bool = False,
-    max_workers: int | None = None,
-    extract_tar: bool = False
+    download_options: DownloadOptions | None = None
 ) -> list[Path]:
+    """Download visibilities and other products for a nominated set of SBIDs
+    from CASDA.
+
+    Args:
+        sbid_list (list[int]): Set of SBIDs to download data for
+        username (str | None, optional): The username to use to authenticate with. Defaults to None.
+        store_password (bool, optional): Whether the password should be stored in a keyring. Defaults to False.
+        reenter_password (bool, optional): Force the password to be entered. Defaults to False.
+        download_options (DownloadOptions | None, optional): Settings to use while downloading. Defaults to None.
+
+    Returns:
+        list[Path]: A list of files downloaded
+    """
+    if download_options is None:
+        download_options = DownloadOptions()
+    
     casda = casda_login(
         username=username,
         store_password=store_password,
@@ -214,12 +300,16 @@ async def get_cutouts_from_casda(
 
     coros = []
     for sbid in sbid_list:
-        result_table: Table = await get_staging_url(sbid)
+        result_table: Table = await get_files_to_download(sbid, download_holography=download_options.download_holography)
+        
+        if download_options.log_only:
+            logger.info(result_table)
+            continue
         
         for row in result_table:
             coros.append(
-                download_sbid_from_casda(
-                    sbid=sbid, row=row, output_dir=output_dir, casda=casda
+                stage_and_download(
+                    sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
                 )
             )
     
@@ -227,11 +317,11 @@ async def get_cutouts_from_casda(
     logger.info(f"{coros=}")
     logger.info(f"{len(coros)=}")
     
-    paths = await gather_with_limit(max_workers, *coros, desc="Download")
+    paths = await gather_with_limit(download_options.max_workers, *coros, desc="Download")
     
-    if extract_tar:
+    if download_options.extract_tar:
         coros = [asyncio.to_thread(extract_tarball, in_path=path) for path in paths]
-        paths = await gather_with_limit(max_workers, *coros, desc="Extracting tarballs")
+        paths = await gather_with_limit(download_options.max_workers, *coros, desc="Extracting tarballs")
     
     return paths
 
@@ -244,18 +334,26 @@ def main() -> None:
     parser.add_argument("--reenter-password", action="store_true", help="Reenter password")
     parser.add_argument("--max-workers", type=int, help="Number of workers", default=None)
     parser.add_argument("--extract-tar", action="store_true", help="If a file is a tarball attempt to extract it. This removes the original tar file if successful.")
+    parser.add_argument("--download-holography", action="store_true", help="Download the evaluation files that contain the holography data")
+    parser.add_argument("--log-only", action="store_true")    
+    
     args = parser.parse_args()
     
-
+    download_options = DownloadOptions(
+        output_dir=args.output_dir,
+        extract_tar=args.extract_tar,
+        download_holography=args.download_holography,
+        max_workers=args.max_workers,
+        log_only=args.log_only,
+    )
+    
     asyncio.run(
         get_cutouts_from_casda(
             sbid_list=args.sbids,
-            output_dir=args.output_dir,
             username=args.username,
             store_password=args.store_password,
             reenter_password=args.reenter_password,
-            max_workers=args.max_workers,
-            extract_tar=args.extract_tar
+            download_options=download_options
         )
     )
 
