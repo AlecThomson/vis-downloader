@@ -419,7 +419,7 @@ async def get_cutouts_from_casda(
 
     paths = []
 
-    coros = await coros_with_limits(
+    coros = coros_with_limits(
         sbids_coros, max_limit=download_options.max_workers, key="sbid"
     )
     for item in asyncio.as_completed(coros):
