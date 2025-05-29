@@ -6,10 +6,9 @@ import argparse
 import asyncio
 import logging
 import tarfile
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, TypeVar, cast
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import aiohttp
@@ -22,7 +21,7 @@ from tqdm.asyncio import tqdm
 from vis_downloader.casda_login import login as casda_login
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Coroutine
+    from collections.abc import Awaitable
 
 T = TypeVar("T")
 
@@ -31,13 +30,17 @@ logger.setLevel(logging.INFO)
 CASDATAP: TapPlus = TapPlus(url="https://casda.csiro.au/casda_vo_tools/tap")
 SEMAPHORES: dict[str, asyncio.Semaphore] = {}
 
-conf.timeout = 120 # Overwrite the default 20 seconds       
+conf.timeout = 120  # Overwrite the default 20 seconds
+
 
 @dataclass
 class DownloadOptions:
-    """options to use for downloading of CASDA SBID data"""
+    """options to use for downloading of CASDA SBID data."""
+
     output_dir: Path | None = None
-    """Output directory to write files to. If None output directory is built from the current working directory and SBID befing downloaded. Defaults to None."""
+    """Output directory to write files to. If None output directory is
+    built from the current working directory and SBID befing downloaded.
+    Defaults to None."""
     extract_tar: bool = False
     """Extract tarballs at the end of downloading"""
     download_holography: bool = False
@@ -66,7 +69,6 @@ async def gather_with_limit(
         Awaitable: The result of the coroutines
 
     """
-    
     if limit is None:
         return cast(
             "list[T]",
@@ -321,7 +323,7 @@ def extract_tarball(in_path: Path) -> Path:
             # extractall() falls over on these
             if not member.isfile():
                 continue
-            
+
             tar.extract(member, in_path.parent, filter="data")
 
     in_path.unlink()
@@ -329,30 +331,35 @@ def extract_tarball(in_path: Path) -> Path:
     return in_path.parent
 
 
-async def coros_with_limits(coros: Awaitable[T], max_limit: int, key: str | None = None) -> Awaitable[T]:
-    """Place a limiter on a set of co-routines via an asynio Semaphore. The `key` is used to
-    denote different semaphores from one another, or use a previously created semaphore.
+def coros_with_limits(
+    coros: Awaitable[T], max_limit: int, key: str | None = None
+) -> Awaitable[T]:
+    """Place a limiter on a set of co-routines via an asynio Semaphore. The `key`
+    is used to denote different semaphores from one another, or use a previously
+    created semaphore.
 
     Args:
         coros (Awaitable[T]): The co-routines that will have some limiter placed
         max_limit (int): The maximum limit of workers
-        key (str | None, optional): The semaphore to use for this limiter. If None or the `key` has not been used one is created. Defaults to None/
+        key (str | None, optional): The semaphore to use for this limiter. If None or
+          the `key` has not been used one is created. Defaults to None.
 
     Returns:
         Awaitable[T]: New routines with a collective semaphore context applied
-    """
 
-    semaphore = SEMAPHORES.get(key, None)
+    """
+    semaphore = SEMAPHORES.get(key)
     if semaphore is None:
         semaphore = asyncio.Semaphore(max_limit)
         SEMAPHORES[key] = semaphore
-    
-    async def _limit(_coro):
+
+    async def _limit(_coro: Awaitable[T]) -> T:
         async with semaphore:
             return await _coro
-        
+
     return [_limit(coro) for coro in coros]
-    
+
+
 async def get_cutouts_from_casda(
     sbid_list: list[int],
     username: str | None = None,
@@ -388,34 +395,41 @@ async def get_cutouts_from_casda(
     )
 
     sbids_coros = []
-               
+
     for sbid in sbid_list:
-        result_table: Table = await get_files_to_download(sbid, download_holography=download_options.download_holography)
-        
+        result_table: Table = await get_files_to_download(
+            sbid, download_holography=download_options.download_holography
+        )
+
         if download_options.log_only:
             logger.info(result_table)
             continue
-        
-        sbids_coros.extend([ stage_and_download(
-                    sbid=sbid, result_row=row, output_dir=download_options.output_dir, casda=casda
-                ) for row in result_table
-            ])
-        
+
+        sbids_coros.extend(
+            [
+                stage_and_download(
+                    sbid=sbid,
+                    result_row=row,
+                    output_dir=download_options.output_dir,
+                    casda=casda,
+                )
+                for row in result_table
+            ]
+        )
+
     paths = []
-    
+
     coros = await coros_with_limits(
-        sbids_coros,
-        max_limit=download_options.max_workers,
-        key="sbid"
+        sbids_coros, max_limit=download_options.max_workers, key="sbid"
     )
     for item in asyncio.as_completed(coros):
         path = await item
-        
+
         if download_options.extract_tar:
-                path = await asyncio.to_thread(extract_tarball, in_path=path)
+            path = await asyncio.to_thread(extract_tarball, in_path=path)
 
         paths.append(path)
-            
+
     return paths
 
 
