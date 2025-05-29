@@ -17,7 +17,9 @@ Download visibilties from CASDA
   - [License](#license)
 
 ## Installation
+
 I haven't published on PyPI yet so run:
+
 ```console
 pip install git+https://github.com/AlecThomson/vis-downloader
 ```
@@ -59,7 +61,7 @@ options:
   -h, --help  show this help message and exit
 ```
 
-Note that you will also want to set the `CASDA_USERNAME` environment variable for non-iteractive use.
+Note that you will also want to set the `CASDA_USERNAME` environment variable for non-interactive use.
 
 ## License
 

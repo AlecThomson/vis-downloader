@@ -1,13 +1,14 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
 
 [project]
 name = "vis-downloader"
 dynamic = ["version"]
 description = ''
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
 keywords = []
 authors = [
@@ -31,14 +32,24 @@ dependencies = [
   "tqdm",
   "aiohttp"
 ]
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "mypy",
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "pytest"
+]
 
 [project.urls]
 Documentation = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downloader#readme"
 Issues = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downloader/issues"
 Source = "https://github.com/Alec Thomson (S&A, Kensington WA)/vis-downloader"
 
-[tool.hatch.version]
-path = "src/vis_downloader/__about__.py"
+[tool.hatch]
+version.source = "vcs"
+build.hooks.vcs.version-file = "src/vis_downloader/_version.py"
 
 [tool.hatch.envs.types]
 extra-dependencies = [
@@ -55,6 +66,7 @@ omit = [
   "src/vis_downloader/__about__.py",
 ]
 
+
 [tool.coverage.paths]
 vis_downloader = ["src/vis_downloader", "*/vis-downloader/src/vis_downloader"]
 tests = ["tests", "*/vis-downloader/tests"]
@@ -69,3 +81,45 @@ exclude_lines = [
 [project.scripts]
 vis_download = "vis_downloader.async_download:main"
 casda_login = "vis_downloader.casda_login:main"
+
+
+[[tool.mypy.overrides]]
+module = "vis_downloader.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = ["astropy.*", "requests", "astroquery.*", "aiohttp"]
+ignore_missing_imports = true
+
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+extend-select = [
+  "ALL"
+]
+ignore = [
+    "COM812",  # missing-trailing-comma
+    "CPY001",  # Missing copyright notice at top of file
+    "D100",    # Missing docstring in public module
+    "D104",    # Missing docstring in public package
+    "D203",    # blank line required before class docstring
+    "D211",    # no-blank-line-before-class
+    "D213",    # multi-line-summary-second-line
+    "EM101",   # raw-string-in-exception
+    "FIX002",  # line-contains-todo
+    "ISC001",  # Conflicts with formatter ruff
+    "PLR0904", # Too many public methods (... > 20)
+    "TD002",   # Missing author in TODO `# TODO(<author_name>): ...`
+    "TD003",   # missing-todo-link
+    "TRY003",  # raise-vanilla-args
+]
+preview = true
+isort.required-imports = ["from __future__ import annotations"]
+
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ALL"]

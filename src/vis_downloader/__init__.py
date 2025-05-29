@@ -1,3 +1,7 @@
-# SPDX-FileCopyrightText: 2024-present Alec Thomson (S&A, Kensington WA) <alec.thomson@csiro.au>
-#
-# SPDX-License-Identifier: MIT
+"""vid-downloader: Download visibilties from CASDA."""
+
+from __future__ import annotations
+
+from ._version import version as __version__
+
+__all__ = ["__version__"]
