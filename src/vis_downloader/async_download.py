@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import aiohttp
+import aiohttp.client_exceptions
 from astropy import log as logger
 from astropy.table import Row, Table, vstack
 from astroquery.casda import CasdaClass, conf
@@ -202,6 +203,39 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     return url
 
 
+R = TypeVar("R")
+
+
+def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
+    """Add retry loop around a wrapped function to re-run the function
+    should it fail, e.g. network outage issues.
+
+    Args:
+        func (Awaitable[T]): The function to retry on failure
+
+    Returns:
+        Awaitable: The wrapped function that will be restarted on failure
+
+    """
+
+    async def _wrapper(*args: T, **kwargs: T) -> R:  # qa: ignore
+        max_retry = 3
+        count = 0
+        while count < max_retry:
+            try:
+                return await func(*args, **kwargs)
+            except aiohttp.client_exceptions.ClientPayloadError:
+                logger.critical("Failed to run. Retrying. ")
+                asyncio.sleep(4)
+
+            count += 1
+
+        raise ValueError("Too many retries")
+
+    return _wrapper
+
+
+@retry_download
 async def download_file(
     url: str,
     output_file: Path,
