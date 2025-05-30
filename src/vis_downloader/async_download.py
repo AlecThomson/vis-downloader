@@ -196,7 +196,6 @@ async def get_files_to_download(
     return vstack(tables, join_type="inner")
 
 
-@retry_download
 def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     """Get the download URL for a file on CASDA.
 
