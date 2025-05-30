@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
 
 T = TypeVar("T")
+R = TypeVar("R")
 
 logger.setLevel(logging.INFO)
 
@@ -50,6 +51,35 @@ class DownloadOptions:
     """The maximum number of download workers to use"""
     log_only: bool = False
     """Simply log the URLs to download. Don't download."""
+
+
+def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
+    """Add retry loop around a wrapped function to re-run the function
+    should it fail, e.g. network outage issues.
+
+    Args:
+        func (Awaitable[T]): The function to retry on failure
+
+    Returns:
+        Awaitable: The wrapped function that will be restarted on failure
+
+    """
+
+    async def _wrapper(*args: T, **kwargs: T) -> R:  # qa: ignore
+        max_retry = 3
+        count = 0
+        while count < max_retry:
+            try:
+                return await func(*args, **kwargs)
+            except aiohttp.client_exceptions.ClientPayloadError:
+                logger.critical("Failed to run. Retrying. ")
+                asyncio.sleep(4)
+
+            count += 1
+
+        raise ValueError("Too many retries")
+
+    return _wrapper
 
 
 # Stolen from https://stackoverflow.com/a/61478547
@@ -166,6 +196,7 @@ async def get_files_to_download(
     return vstack(tables, join_type="inner")
 
 
+@retry_download
 def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     """Get the download URL for a file on CASDA.
 
@@ -201,38 +232,6 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     msg = f"Staged data at {url}"
     logger.info(msg)
     return url
-
-
-R = TypeVar("R")
-
-
-def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
-    """Add retry loop around a wrapped function to re-run the function
-    should it fail, e.g. network outage issues.
-
-    Args:
-        func (Awaitable[T]): The function to retry on failure
-
-    Returns:
-        Awaitable: The wrapped function that will be restarted on failure
-
-    """
-
-    async def _wrapper(*args: T, **kwargs: T) -> R:  # qa: ignore
-        max_retry = 3
-        count = 0
-        while count < max_retry:
-            try:
-                return await func(*args, **kwargs)
-            except aiohttp.client_exceptions.ClientPayloadError:
-                logger.critical("Failed to run. Retrying. ")
-                asyncio.sleep(4)
-
-            count += 1
-
-        raise ValueError("Too many retries")
-
-    return _wrapper
 
 
 @retry_download
