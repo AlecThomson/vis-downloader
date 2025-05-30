@@ -212,7 +212,16 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
 
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = casda.stage_data(Table(result_row))
+    max_retry = 3
+    while max_retry > 0:
+        try:
+            url_list: list[str] = casda.stage_data(Table(result_row))
+            break
+        except ValueError:
+            logger.warning("Failed to stage. retrying.")
+            max_retry -= 1
+    else:
+        raise ValueError("Failed to stage data too many times.")
 
     good_url_list = []
     for url in url_list:
