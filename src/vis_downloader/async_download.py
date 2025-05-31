@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import aiohttp
 import aiohttp.client_exceptions
+import requests
 from astropy import log as logger
 from astropy.table import Row, Table, vstack
 from astroquery.casda import CasdaClass, conf
@@ -217,7 +218,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         try:
             url_list: list[str] = casda.stage_data(Table(result_row))
             break
-        except ValueError:
+        except (ValueError, requests.Exception.ConnectionError):
             logger.warning("Failed to stage. retrying.")
             max_retry -= 1
     else:
