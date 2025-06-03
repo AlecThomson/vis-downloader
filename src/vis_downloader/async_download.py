@@ -222,6 +222,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
             ValueError,
             requests.exceptions.ConnectionError,
             requests.exceptions.ReadTimeout,
+            requests.exceptions.HTTPError,
         ):
             logger.warning("Failed to stage. retrying.")
             max_retry -= 1
