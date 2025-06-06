@@ -107,6 +107,7 @@ ignore = [
     "D100",    # Missing docstring in public module
     "D104",    # Missing docstring in public package
     "D203",    # blank line required before class docstring
+    "D205",    # blank-line-after-function
     "D211",    # no-blank-line-before-class
     "D213",    # multi-line-summary-second-line
     "EM101",   # raw-string-in-exception
