@@ -49,6 +49,9 @@ class DownloadOptions:
     """The maximum number of download workers to use"""
     log_only: bool = False
     """Simply log the URLs to download. Don't download."""
+    disable_progress: bool = False
+    """Disable the progress bars produced by tqdm.
+    Useful when running in a non-TTY setting."""
 
 
 # Stolen from https://stackoverflow.com/a/61478547
@@ -202,12 +205,14 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     return url
 
 
-async def download_file(
+async def download_file(  # noqa: PLR0913
     url: str,
     output_file: Path,
     connect_timeout_seconds: int = 120,
     download_timeout_seconds: int = 60 * 60 * 12,
     chunk_size: int = 1000000,
+    *,
+    disable_progress: bool = False,
 ) -> Path:
     """Download a file from CASDA, streaming it to its final location.
 
@@ -220,6 +225,8 @@ async def download_file(
             for the download to finish. Defaults to 60*60*12.
         chunk_size (int, optional): Size of data blocks to store in memory before
             flushing to disk. Defaults to 1000000.
+        disable_progress (bool, optional): Disable the progress bars produced by tqdm.
+            Useful when running in a non-TTY setting. Defaults to False.
 
     Raises:
         ValueError: A status code other than 200 is returned when accessing the server
@@ -256,6 +263,7 @@ async def download_file(
                 unit_scale=True,
                 unit_divisor=1024,
                 desc=output_file.name,
+                disable=disable_progress,
             ) as pbar,
         ):
             async for chunk in response.content.iter_chunked(chunk_size):
@@ -273,6 +281,8 @@ async def stage_and_download(
     result_row: Row,
     casda: CasdaClass,
     output_dir: Path | None = None,
+    *,
+    disable_progress: bool = False,
 ) -> Path:
     """Trigger CASDA to stage the data and then download it once it has been staged.
 
@@ -285,6 +295,8 @@ async def stage_and_download(
             authentication
         output_dir (Path | None, optional): The location to write the data to.
             If None data will be downloaded into a folder for the SBID. Defaults to None
+        disable_progress (bool, optional): Disable the progress bars produced
+            by `tqdm`. Useful when running in a non-TTY setting.. Defaults to False.
 
     Returns:
         Path: Path to the file that has been downloaded
@@ -297,7 +309,7 @@ async def stage_and_download(
     url = await asyncio.to_thread(get_download_url, result_row, casda)
     output_file = output_dir / result_row["filename"]
 
-    return await download_file(url, output_file)
+    return await download_file(url, output_file, disable_progress=disable_progress)
 
 
 def extract_tarball(in_path: Path) -> Path:
@@ -412,6 +424,7 @@ async def get_cutouts_from_casda(
                     result_row=row,
                     output_dir=download_options.output_dir,
                     casda=casda,
+                    disable_progress=download_options.disable_progress,
                 )
                 for row in result_table
             ]
@@ -474,6 +487,14 @@ def main() -> None:
         help="Download the evaluation files that contain the holography data",
     )
     parser.add_argument("--log-only", action="store_true")
+    parser.add_argument(
+        "--disable-progress",
+        action="store_true",
+        help=(
+            "Disable the progress bars produced by `tqdm` ",
+            "Useful when running in a non-TTY setting.",
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -483,6 +504,7 @@ def main() -> None:
         download_holography=args.download_holography,
         max_workers=args.max_workers,
         log_only=args.log_only,
+        disable_progress=args.disable_progress,
     )
     asyncio.run(
         get_cutouts_from_casda(
