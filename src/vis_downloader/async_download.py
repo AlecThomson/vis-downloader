@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
 
 import aiohttp
+import aiohttp.client_exceptions
+import requests
 from astropy import log as logger
 from astropy.table import Row, Table, vstack
 from astroquery.casda import CasdaClass, conf
@@ -24,6 +26,7 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
 
 T = TypeVar("T")
+R = TypeVar("R")
 
 logger.setLevel(logging.INFO)
 
@@ -52,6 +55,35 @@ class DownloadOptions:
     disable_progress: bool = False
     """Disable the progress bars produced by tqdm.
     Useful when running in a non-TTY setting."""
+
+
+def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
+    """Add retry loop around a wrapped function to re-run the function
+    should it fail, e.g. network outage issues.
+
+    Args:
+        func (Awaitable[T]): The function to retry on failure
+
+    Returns:
+        Awaitable: The wrapped function that will be restarted on failure
+
+    """
+
+    async def _wrapper(*args: T, **kwargs: T) -> R:  # qa: ignore
+        max_retry = 3
+        count = 0
+        while count < max_retry:
+            try:
+                return await func(*args, **kwargs)
+            except aiohttp.client_exceptions.ClientPayloadError:
+                logger.critical("Failed to run. Retrying. ")
+                asyncio.sleep(4)
+
+            count += 1
+
+        raise ValueError("Too many retries")
+
+    return _wrapper
 
 
 # Stolen from https://stackoverflow.com/a/61478547
@@ -184,7 +216,21 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
 
     """
     logger.info("Staging data on CASDA...")
-    url_list: list[str] = casda.stage_data(Table(result_row))
+    max_retry = 3
+    while max_retry > 0:
+        try:
+            url_list: list[str] = casda.stage_data(Table(result_row))
+            break
+        except (
+            ValueError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ReadTimeout,
+            requests.exceptions.HTTPError,
+        ):
+            logger.warning("Failed to stage. retrying.")
+            max_retry -= 1
+    else:
+        raise ValueError("Failed to stage data too many times.")
 
     good_url_list = []
     for url in url_list:
@@ -205,6 +251,7 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     return url
 
 
+@retry_download
 async def download_file(  # noqa: PLR0913
     url: str,
     output_file: Path,
