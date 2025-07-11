@@ -495,8 +495,15 @@ def main() -> None:
             "Useful when running in a non-TTY setting.",
         ),
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Silence logged output and progress bar updates",
+    )
 
     args = parser.parse_args()
+
+    disable_progress = args.quiet or args.disable_progress
 
     download_options = DownloadOptions(
         output_dir=args.output_dir,
@@ -504,8 +511,13 @@ def main() -> None:
         download_holography=args.download_holography,
         max_workers=args.max_workers,
         log_only=args.log_only,
-        disable_progress=args.disable_progress,
+        disable_progress=disable_progress,
     )
+
+    # Set the logging to a higher level
+    if args.quiet:
+        logger.setLevel(logging.CRITICAL)
+
     asyncio.run(
         get_cutouts_from_casda(
             sbid_list=args.sbids,
