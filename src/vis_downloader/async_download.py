@@ -55,11 +55,16 @@ class DownloadOptions:
     disable_progress: bool = False
     """Disable the progress bars produced by tqdm.
     Useful when running in a non-TTY setting."""
+    max_tries: int = 3
+    """The maximum number of reteries to allow when downloading a file."""
 
 
 def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
     """Add retry loop around a wrapped function to re-run the function
     should it fail, e.g. network outage issues.
+
+    The returned function will have a `max_retries` keyword added to denotes how many
+    retries are allowed before a `ValueError` is raised.
 
     Args:
         func (Awaitable[T]): The function to retry on failure
@@ -69,10 +74,13 @@ def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
 
     """
 
-    async def _wrapper(*args: T, **kwargs: T) -> R:  # qa: ignore
-        max_retry = 3
+    async def _wrapper(*args: T, max_retries: int = 3, **kwargs: T) -> R:  # qa: ignore
+        if max_retries <= 0:
+            msg = f"{max_retries=}, but should be larger than 0"
+            raise ValueError(msg)
+
         count = 0
-        while count < max_retry:
+        while count < max_retries:
             try:
                 return await func(*args, **kwargs)
             except aiohttp.client_exceptions.ClientPayloadError:
@@ -323,13 +331,14 @@ async def download_file(  # noqa: PLR0913
     return output_file
 
 
-async def stage_and_download(
+async def stage_and_download(  # noqa: RUF100 PLR0913
     sbid: int,
     result_row: Row,
     casda: CasdaClass,
     output_dir: Path | None = None,
     *,
     disable_progress: bool = False,
+    max_retries: int = 3,
 ) -> Path:
     """Trigger CASDA to stage the data and then download it once it has been staged.
 
@@ -344,6 +353,8 @@ async def stage_and_download(
             If None data will be downloaded into a folder for the SBID. Defaults to None
         disable_progress (bool, optional): Disable the progress bars produced
             by `tqdm`. Useful when running in a non-TTY setting.. Defaults to False.
+        max_retries (int, optional): The maximum number of retries allowed before a
+            file is deemed unsuccessful. Defaults to 3.
 
     Returns:
         Path: Path to the file that has been downloaded
@@ -356,7 +367,9 @@ async def stage_and_download(
     url = await asyncio.to_thread(get_download_url, result_row, casda)
     output_file = output_dir / result_row["filename"]
 
-    return await download_file(url, output_file, disable_progress=disable_progress)
+    return await download_file(
+        url, output_file, disable_progress=disable_progress, max_retries=max_retries
+    )
 
 
 def extract_tarball(in_path: Path) -> Path:
@@ -472,6 +485,7 @@ async def get_cutouts_from_casda(
                     output_dir=download_options.output_dir,
                     casda=casda,
                     disable_progress=download_options.disable_progress,
+                    max_retries=download_options.max_workers,
                 )
                 for row in result_table
             ]
@@ -547,6 +561,12 @@ def main() -> None:
         action="store_true",
         help="Silence logged output and progress bar updates",
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="The maximum number of retries allowed for each file when downloading.",
+    )
 
     args = parser.parse_args()
 
@@ -559,6 +579,7 @@ def main() -> None:
         max_workers=args.max_workers,
         log_only=args.log_only,
         disable_progress=disable_progress,
+        max_tries=args.max_retries,
     )
 
     # Set the logging to a higher level
