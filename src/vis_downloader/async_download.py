@@ -193,7 +193,7 @@ async def get_files_to_download(
             downloaded. Defaults to False.
 
     Returns:
-        Table: Result set of matching files. Should multuple requests be made the
+        Table: Result set of matching files. Should multiple requests be made the
             intersection of columns between tables is returned.
 
     """
