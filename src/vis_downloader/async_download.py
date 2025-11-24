@@ -56,7 +56,7 @@ class DownloadOptions:
     """Disable the progress bars produced by tqdm.
     Useful when running in a non-TTY setting."""
     max_tries: int = 3
-    """The maximum number of reteries to allow when downloading a file."""
+    """The maximum number of retries to allow when downloading a file."""
 
 
 def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
