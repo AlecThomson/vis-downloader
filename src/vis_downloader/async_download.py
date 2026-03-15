@@ -137,6 +137,7 @@ async def gather_with_limit(
 async def _get_holography_url(
     sbid: int,
     mode: Literal["vis", "holography"] = "vis",
+    beam: None | int = None,
 ) -> Table:
     """Generate and execute a ADQL query.
 
@@ -159,6 +160,8 @@ async def _get_holography_url(
             f"where obs_id='ASKAP-{sbid}' "
             f"AND dataproduct_type='visibility'"
         )
+        if beam is not None:
+            query_str += rf" AND filename LIKE '%beam{beam:01d}%'"
     elif mode == "holography":
         query_str = (
             f"SELECT * FROM casda.observation_evaluation_file "  # noqa: S608
@@ -184,6 +187,7 @@ async def get_files_to_download(
     sbid: int,
     *,
     download_holography: bool = False,
+    beam: None | int = None,
 ) -> Table:
     """Lookup in CASDA files to download for a specified SBID.
 
@@ -198,7 +202,7 @@ async def get_files_to_download(
 
     """
     tables: list[Table] = []
-    results = await _get_holography_url(sbid=sbid)
+    results = await _get_holography_url(sbid=sbid, beam=beam)
     tables.append(results)
 
     if download_holography:
@@ -439,6 +443,7 @@ async def get_cutouts_from_casda(
     store_password: bool = False,
     reenter_password: bool = False,
     download_options: DownloadOptions | None = None,
+    beam: None | int = None,
 ) -> list[Path]:
     """Download visibilities and other products for a nominated set of SBIDs from CASDA.
 
@@ -470,7 +475,7 @@ async def get_cutouts_from_casda(
 
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(
-            sbid, download_holography=download_options.download_holography
+            sbid, download_holography=download_options.download_holography, beam=beam,
         )
 
         if download_options.log_only:
@@ -514,6 +519,12 @@ def main() -> None:
     )
     parser.add_argument("sbids", nargs="+", type=int, help="SBID to download")
     parser.add_argument(
+        "--beam",
+        type=int,
+        help="Beam to download. Defaults to all.",
+        default=None,
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         help="Output directory. If unset a directory for each SBID will be created.",
@@ -534,7 +545,7 @@ def main() -> None:
         "--max-workers",
         type=int,
         help="Number of workers",
-        default=None,
+        default=1,
     )
     parser.add_argument(
         "--extract-tar",
@@ -551,10 +562,7 @@ def main() -> None:
     parser.add_argument(
         "--disable-progress",
         action="store_true",
-        help=(
-            "Disable the progress bars produced by `tqdm` ",
-            "Useful when running in a non-TTY setting.",
-        ),
+        help="Disable the progress bars produced by `tqdm`.",
     )
     parser.add_argument(
         "--quiet",
@@ -593,6 +601,7 @@ def main() -> None:
             store_password=args.store_password,
             reenter_password=args.reenter_password,
             download_options=download_options,
+            beam=args.beam,
         ),
     )
 
