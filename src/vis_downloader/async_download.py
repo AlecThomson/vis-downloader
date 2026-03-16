@@ -475,7 +475,9 @@ async def get_cutouts_from_casda(
 
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(
-            sbid, download_holography=download_options.download_holography, beam=beam,
+            sbid,
+            download_holography=download_options.download_holography,
+            beam=beam,
         )
 
         if download_options.log_only:
