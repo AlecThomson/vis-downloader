@@ -9,7 +9,7 @@ import tarfile
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeVar, cast
+from typing import Literal, TypeVar, cast
 
 import aiohttp
 import aiohttp.client_exceptions
@@ -21,9 +21,6 @@ from astroquery.utils.tap.core import TapPlus
 from tqdm.asyncio import tqdm
 
 from vis_downloader.casda_login import login as casda_login
-
-if TYPE_CHECKING:
-    from collections.abc import Awaitable
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -137,7 +134,7 @@ async def gather_with_limit(
 async def _get_holography_url(
     sbid: int,
     mode: Literal["vis", "holography"] = "vis",
-    beam: None | int = None,
+    beam: int | None = None,
 ) -> Table:
     """Generate and execute a ADQL query.
 
@@ -187,7 +184,7 @@ async def get_files_to_download(
     sbid: int,
     *,
     download_holography: bool = False,
-    beam: None | int = None,
+    beam: int | None = None,
 ) -> Table:
     """Lookup in CASDA files to download for a specified SBID.
 
@@ -443,7 +440,7 @@ async def get_cutouts_from_casda(
     store_password: bool = False,
     reenter_password: bool = False,
     download_options: DownloadOptions | None = None,
-    beam: None | int = None,
+    beam: int | None = None,
 ) -> list[Path]:
     """Download visibilities and other products for a nominated set of SBIDs from CASDA.
 
@@ -475,7 +472,9 @@ async def get_cutouts_from_casda(
 
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(
-            sbid, download_holography=download_options.download_holography, beam=beam,
+            sbid,
+            download_holography=download_options.download_holography,
+            beam=beam,
         )
 
         if download_options.log_only:
