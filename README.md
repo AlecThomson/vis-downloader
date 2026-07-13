@@ -8,7 +8,7 @@ Download visibilties from CASDA.
 
 ## Installation
 
-I haven't published on PyPI yet so run:
+Use `pip`:
 
 ```console
 pip install git+https://github.com/AlecThomson/vis-downloader
