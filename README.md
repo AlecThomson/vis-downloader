@@ -10,7 +10,11 @@ Download visibilties from CASDA.
 
 I haven't published on PyPI yet so run:
 
-```console
+```sh
+# From PyPI
+pip install vis-downloader
+# - OR -
+# Latest git version
 pip install git+https://github.com/AlecThomson/vis-downloader
 ```
 
@@ -19,27 +23,34 @@ pip install git+https://github.com/AlecThomson/vis-downloader
 To make sure you don't DDoS CASDA, please make use of the `--max-workers` option.
 
 ```bash
-vis_download -h
-# usage: vis_download [-h] [--output-dir OUTPUT_DIR] [--username USERNAME] [--store-password] [--reenter-password] [--max-workers MAX_WORKERS] [--extract-tar] [--download-holography] [--log-only] sbids [sbids ...]
-#
-# Download visibilities from CASDA for a given SBID
-#
-# positional arguments:
-#   sbids                 SBID to download
-#
-# options:
-#   -h, --help            show this help message and exit
-#   --output-dir OUTPUT_DIR
-#                         Output directory. If unset a directory for each SBID will be created.
-#   --username USERNAME   CASDA username
-#   --store-password      Store password in keyring
-#   --reenter-password    Reenter password
-#   --max-workers MAX_WORKERS
-#                         Number of workers
-#   --extract-tar         If a file is a tarball attempt to extract it. This removes the original tar file if successful.
-#   --download-holography
-#                         Download the evaluation files that contain the holography data
-#   --log-only
+usage: vis_download [-h] [--beam BEAM] [--output-dir OUTPUT_DIR] [--username USERNAME] [--store-password] [--reenter-password]
+                    [--max-workers MAX_WORKERS] [--extract-tar] [--download-holography] [--log-only] [--disable-progress] [--quiet]
+                    [--max-retries MAX_RETRIES]
+                    sbids [sbids ...]
+
+Download visibilities from CASDA for a given SBID
+
+positional arguments:
+  sbids                 SBID to download
+
+options:
+  -h, --help            show this help message and exit
+  --beam BEAM           Beam to download. Defaults to all.
+  --output-dir OUTPUT_DIR
+                        Output directory. If unset a directory for each SBID will be created.
+  --username USERNAME   CASDA username
+  --store-password      Store password in keyring
+  --reenter-password    Reenter password
+  --max-workers MAX_WORKERS
+                        Number of workers
+  --extract-tar         If a file is a tarball attempt to extract it. This removes the original tar file if successful.
+  --download-holography
+                        Download the evaluation files that contain the holography data
+  --log-only
+  --disable-progress    Disable the progress bars produced by `tqdm`.
+  --quiet               Silence logged output and progress bar updates
+  --max-retries MAX_RETRIES
+                        The maximum number of retries allowed for each file when downloading.
 ```
 
 To cache your CASDA credentials run:
