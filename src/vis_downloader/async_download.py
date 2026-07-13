@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import logging
 import tarfile
-from collections.abc import Awaitable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar, cast
@@ -56,7 +55,7 @@ class DownloadOptions:
     """Disable the progress bars produced by tqdm.
     Useful when running in a non-TTY setting."""
     max_tries: int = 3
-    """The maximum number of reteries to allow when downloading a file."""
+    """The maximum number of retries to allow when downloading a file."""
 
 
 def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
@@ -137,7 +136,7 @@ async def gather_with_limit(
 async def _get_holography_url(
     sbid: int,
     mode: Literal["vis", "holography"] = "vis",
-    beam: None | int = None,
+    beam: int | None = None,
 ) -> Table:
     """Generate and execute a ADQL query.
 
@@ -145,13 +144,15 @@ async def _get_holography_url(
         sbid (int): The SBID we want files for
         mode (Literal["vis, "holography"], optional): Whether visibilities or holography
             will be downloaded. Defaults to "vis".
+        beam (int | None, optional): Restrict results to a single beam.
+            Defaults to None.
+
+    Returns:
+        Table: Matching results of the ADQL request
 
     Raises:
         ValueError: Raised if `mode` is not known
         ValueError: Raised if the remote request returns failed
-
-    Returns:
-        Table: Matching results of the ADQL request
 
     """
     if mode == "vis":
@@ -187,7 +188,7 @@ async def get_files_to_download(
     sbid: int,
     *,
     download_holography: bool = False,
-    beam: None | int = None,
+    beam: int | None = None,
 ) -> Table:
     """Lookup in CASDA files to download for a specified SBID.
 
@@ -195,6 +196,8 @@ async def get_files_to_download(
         sbid (int): The SBID to download
         download_holography (bool, optional): Whether holography data needs to be
             downloaded. Defaults to False.
+        beam (int | None, optional): Restrict results to a single beam.
+            Defaults to None.
 
     Returns:
         Table: Result set of matching files. Should multiple requests be made the
@@ -219,12 +222,12 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
         result_row (Row): Result row
         casda (CasdaClass): CASDA class
 
+    Returns:
+        str: Download URL
+
     Raises:
         ValueError: If no results are found
         ValueError: If multiple results are found
-
-    Returns:
-        str: Download URL
 
     """
     logger.info("Staging data on CASDA...")
@@ -287,11 +290,11 @@ async def download_file(  # noqa: PLR0913
         disable_progress (bool, optional): Disable the progress bars produced by tqdm.
             Useful when running in a non-TTY setting. Defaults to False.
 
-    Raises:
-        ValueError: A status code other than 200 is returned when accessing the server
-
     Returns:
         Path: Location of the file that was written to
+
+    Raises:
+        ValueError: A status code other than 200 is returned when accessing the server
 
     """
     msg = f"Using aiohttp, Downloading from {url}"
@@ -436,14 +439,14 @@ def coros_with_limits(
     return [_limit(coro) for coro in coros]
 
 
-async def get_cutouts_from_casda(
+async def get_cutouts_from_casda(  # noqa: PLR0913
     sbid_list: list[int],
     username: str | None = None,
     *,
     store_password: bool = False,
     reenter_password: bool = False,
     download_options: DownloadOptions | None = None,
-    beam: None | int = None,
+    beam: int | None = None,
 ) -> list[Path]:
     """Download visibilities and other products for a nominated set of SBIDs from CASDA.
 
@@ -457,6 +460,8 @@ async def get_cutouts_from_casda(
             Defaults to False.
         download_options (DownloadOptions | None, optional): Settings to use while
             downloading. Defaults to None.
+        beam (int | None, optional): Restrict results to a single beam.
+            Defaults to None.
 
     Returns:
         list[Path]: A list of files downloaded
@@ -475,7 +480,9 @@ async def get_cutouts_from_casda(
 
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(
-            sbid, download_holography=download_options.download_holography, beam=beam,
+            sbid,
+            download_holography=download_options.download_holography,
+            beam=beam,
         )
 
         if download_options.log_only:
