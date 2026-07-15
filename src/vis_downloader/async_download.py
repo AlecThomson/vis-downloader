@@ -324,8 +324,8 @@ async def download_file(  # noqa: PLR0913
         session.get(encoded_url) as response,
     ):
         if response.status != ok_status:
-            text = await response.text()
-            raise RuntimeError(text)
+            msg = f"{response.status=}, indicating the request was not successful."
+            raise RuntimeError(msg)
 
         total_size = int(response.headers.get("content-length", 0))
 
