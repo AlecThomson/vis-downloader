@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar, cast
 import aiohttp
 import aiohttp.client_exceptions
 import requests
+import yarl
 from astropy import log as logger
 from astropy.table import Row, Table, vstack
 from astroquery.casda import CasdaClass, conf
@@ -54,7 +55,7 @@ class DownloadOptions:
     disable_progress: bool = False
     """Disable the progress bars produced by tqdm.
     Useful when running in a non-TTY setting."""
-    max_tries: int = 3
+    max_retries: int = 3
     """The maximum number of retries to allow when downloading a file."""
 
 
@@ -84,7 +85,7 @@ def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
                 return await func(*args, **kwargs)
             except aiohttp.client_exceptions.ClientPayloadError:
                 logger.critical("Failed to run. Retrying. ")
-                asyncio.sleep(4)
+                await asyncio.sleep(4)
 
             count += 1
 
@@ -294,11 +295,24 @@ async def download_file(  # noqa: PLR0913
         Path: Location of the file that was written to
 
     Raises:
-        ValueError: A status code other than 200 is returned when accessing the server
+        RuntimeError: A status code other than 200 is returned when accessing the server
 
     """
-    msg = f"Using aiohttp, Downloading from {url}"
+    # Fix URL insanity
+    escaped_url_str = (
+        url.replace("+", "%2B")  # for the S3 signature verification)
+        .replace(
+            " ",
+            "%20",  # prevent the Squid 400 Bad Request proxy error
+        )
+        .replace('"', "%22")  # standard quote encoding
+    )
+
+    msg = f"Using aiohttp, Downloading from '{escaped_url_str}'"
     logger.info(msg)
+
+    # Force yarl/aiohttp to use this exact string without auto-decoding it
+    encoded_url = yarl.URL(escaped_url_str, encoded=True)
 
     timeout = aiohttp.ClientTimeout(
         total=download_timeout_seconds,
@@ -307,13 +321,11 @@ async def download_file(  # noqa: PLR0913
     ok_status = 200
     async with (
         aiohttp.ClientSession(timeout=timeout) as session,
-        session.get(url) as response,
+        session.get(encoded_url) as response,
     ):
         if response.status != ok_status:
-            msg = f"{response.status=}, indicating the request was not successful."
-            raise ValueError(
-                msg,
-            )
+            text = await response.text()
+            raise RuntimeError(text)
 
         total_size = int(response.headers.get("content-length", 0))
 
@@ -497,7 +509,7 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
                     output_dir=download_options.output_dir,
                     casda=casda,
                     disable_progress=download_options.disable_progress,
-                    max_retries=download_options.max_workers,
+                    max_retries=download_options.max_retries,
                 )
                 for row in result_table
             ]
@@ -594,7 +606,7 @@ def main() -> None:
         max_workers=args.max_workers,
         log_only=args.log_only,
         disable_progress=disable_progress,
-        max_tries=args.max_retries,
+        max_retries=args.max_retries,
     )
 
     # Set the logging to a higher level
