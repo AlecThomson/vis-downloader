@@ -300,7 +300,7 @@ async def download_file(  # noqa: PLR0913
     """
     # Fix URL insanity
     escaped_url_str = (
-        url.replace("+", "%2B")  # for the S3 signature verification)
+        url.replace("+", "%2B")  # for the S3 signature verification
         .replace(
             " ",
             "%20",  # prevent the Squid 400 Bad Request proxy error
@@ -318,14 +318,15 @@ async def download_file(  # noqa: PLR0913
         total=download_timeout_seconds,
         connect=connect_timeout_seconds,
     )
-    ok_status = 200
     async with (
         aiohttp.ClientSession(timeout=timeout) as session,
         session.get(encoded_url) as response,
     ):
-        if response.status != ok_status:
-            msg = f"{response.status=}, indicating the request was not successful."
-            raise RuntimeError(msg)
+        try:
+            response.raise_for_status()
+        except Exception as e:
+            msg = f"Error trying to download file - see traceback for details ({response.status=})."  # ruff:ignore[line-too-long]
+            raise RuntimeError(msg) from e
 
         total_size = int(response.headers.get("content-length", 0))
 
