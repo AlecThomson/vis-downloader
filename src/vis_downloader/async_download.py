@@ -57,6 +57,8 @@ class DownloadOptions:
     Useful when running in a non-TTY setting."""
     max_retries: int = 3
     """The maximum number of retries to allow when downloading a file."""
+    resume: bool = False
+    """Resume partially downloaded files and skip already completed files."""
 
 
 def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
@@ -85,6 +87,14 @@ def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
                 return await func(*args, **kwargs)
             except aiohttp.client_exceptions.ClientPayloadError:
                 logger.critical("Failed to run. Retrying. ")
+                await asyncio.sleep(4)
+            except (
+                aiohttp.client_exceptions.ClientError,
+                asyncio.TimeoutError,
+            ) as err:
+                logger.critical(
+                    f"Network error: {err}. Retrying ({count + 1}/{max_retries})... "
+                )
                 await asyncio.sleep(4)
 
             count += 1
@@ -267,6 +277,99 @@ def get_download_url(result_row: Row, casda: CasdaClass) -> str:
     return url
 
 
+def _get_extracted_path(output_dir: Path, filename: str) -> Path | None:
+    """Get candidate extracted path for a tarball if it was previously extracted.
+
+    Args:
+        output_dir (Path): Directory where extracted files are placed.
+        filename (str): Name of the tarball file.
+
+    Returns:
+        Path | None: Path to the extracted folder or file if it exists, otherwise None.
+
+    """
+    for ext in (".tar.gz", ".tar.bz2", ".tar.xz", ".tar", ".tgz"):
+        if filename.endswith(ext):
+            extracted_name = filename[: -len(ext)]
+            candidate = output_dir / extracted_name
+            if candidate.exists():
+                return candidate
+    return None
+
+
+async def _stream_response_to_file(  # noqa: PLR0913
+    response: aiohttp.ClientResponse,
+    part_file: Path,
+    output_filename: str,
+    curr_bytes: int,
+    chunk_size: int,
+    *,
+    disable_progress: bool,
+) -> None:
+    """Stream chunks from an aiohttp response to a destination partial file.
+
+    Args:
+        response (aiohttp.ClientResponse): The HTTP response to read from.
+        part_file (Path): Temporary file path to write data into.
+        output_filename (str): Name of the target file for progress bar display.
+        curr_bytes (int): Number of bytes previously downloaded.
+        chunk_size (int): Size of chunks to read from the stream.
+        disable_progress (bool): Whether to disable the tqdm progress bar.
+
+    Raises:
+        RuntimeError: If the response status code is not 200 or 206.
+
+    """
+    ok_status = 200
+    partial_content_status = 206
+
+    if response.status == partial_content_status:
+        content_range = response.headers.get("Content-Range", "")
+        if "/" in content_range:
+            try:
+                total_size = int(content_range.split("/")[-1])
+            except ValueError:
+                content_len = int(response.headers.get("content-length", 0))
+                total_size = curr_bytes + content_len
+        else:
+            content_len = int(response.headers.get("content-length", 0))
+            total_size = curr_bytes + content_len
+        file_mode = "ab"
+        initial_bytes = curr_bytes
+        logger.info(
+            f"Resuming {output_filename}: "
+            f"{curr_bytes}/{total_size} bytes already downloaded."
+        )
+    elif response.status == ok_status:
+        total_size = int(response.headers.get("content-length", 0))
+        file_mode = "wb"
+        initial_bytes = 0
+        if curr_bytes > 0:
+            logger.warning(
+                f"Server returned 200 OK for {output_filename}; resuming "
+                "not supported or range ignored. Restarting from byte 0."
+            )
+    else:
+        msg = f"{response.status=}, indicating the request was not successful."
+        raise RuntimeError(msg)
+
+    with (
+        part_file.open(file_mode) as file_desc,
+        tqdm(
+            total=total_size,
+            initial=initial_bytes,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc=output_filename,
+            disable=disable_progress,
+        ) as pbar,
+    ):
+        async for chunk in response.content.iter_chunked(chunk_size):
+            pbar.update(len(chunk))
+            file_desc.write(chunk)
+
+
 @retry_download
 async def download_file(  # noqa: PLR0913
     url: str,
@@ -276,6 +379,7 @@ async def download_file(  # noqa: PLR0913
     chunk_size: int = 1000000,
     *,
     disable_progress: bool = False,
+    resume: bool = False,
 ) -> Path:
     """Download a file from CASDA, streaming it to its final location.
 
@@ -283,21 +387,26 @@ async def download_file(  # noqa: PLR0913
         url (str): The URL describing the remote resources to download
         output_file (Path): The location to write the file to.
         connect_timeout_seconds (int, optional): The acceptable amount of time to
-            establish a connection to server. Defaults to 43200.
+            establish a connection to server. Defaults to 120.
         download_timeout_seconds (int, optional): The acceptable amount of time to wait
             for the download to finish. Defaults to 60*60*12.
         chunk_size (int, optional): Size of data blocks to store in memory before
             flushing to disk. Defaults to 1000000.
         disable_progress (bool, optional): Disable the progress bars produced by tqdm.
             Useful when running in a non-TTY setting. Defaults to False.
+        resume (bool, optional): Resume partially downloaded files and skip already
+            downloaded files. Defaults to False.
 
     Returns:
         Path: Location of the file that was written to
 
-    Raises:
-        RuntimeError: A status code other than 200 is returned when accessing the server
-
     """
+    if resume and output_file.exists() and output_file.stat().st_size > 0:
+        logger.info(f"File {output_file} already exists. Skipping download.")
+        return output_file
+
+    part_file = output_file.with_name(f"{output_file.name}.part")
+
     # Fix URL insanity
     escaped_url_str = (
         url.replace("+", "%2B")  # for the S3 signature verification)
@@ -314,37 +423,45 @@ async def download_file(  # noqa: PLR0913
     # Force yarl/aiohttp to use this exact string without auto-decoding it
     encoded_url = yarl.URL(escaped_url_str, encoded=True)
 
+    curr_bytes = 0
+    headers = {}
+    if resume and part_file.exists():
+        curr_bytes = part_file.stat().st_size
+        if curr_bytes > 0:
+            headers["Range"] = f"bytes={curr_bytes}-"
+            logger.info(
+                f"Attempting to resume download for {output_file.name} "
+                f"from byte {curr_bytes}"
+            )
+
     timeout = aiohttp.ClientTimeout(
         total=download_timeout_seconds,
         connect=connect_timeout_seconds,
     )
-    ok_status = 200
+    range_not_satisfiable_status = 416
+
     async with (
         aiohttp.ClientSession(timeout=timeout) as session,
-        session.get(encoded_url) as response,
+        session.get(encoded_url, headers=headers) as response,
     ):
-        if response.status != ok_status:
-            msg = f"{response.status=}, indicating the request was not successful."
-            raise RuntimeError(msg)
+        if response.status == range_not_satisfiable_status and curr_bytes > 0:
+            logger.info(
+                f"Range not satisfiable (status 416) for {output_file.name}. "
+                "Finalizing existing download."
+            )
+            part_file.replace(output_file)
+            return output_file
 
-        total_size = int(response.headers.get("content-length", 0))
+        await _stream_response_to_file(
+            response=response,
+            part_file=part_file,
+            output_filename=output_file.name,
+            curr_bytes=curr_bytes,
+            chunk_size=chunk_size,
+            disable_progress=disable_progress,
+        )
 
-        with (
-            output_file.open("wb") as file_desc,
-            tqdm(
-                total=total_size,
-                unit="B",
-                unit_scale=True,
-                unit_divisor=1024,
-                desc=output_file.name,
-                disable=disable_progress,
-            ) as pbar,
-        ):
-            async for chunk in response.content.iter_chunked(chunk_size):
-                pbar.update(len(chunk))
-
-                file_desc.write(chunk)
-
+    part_file.replace(output_file)
     msg = f"Downloaded to {output_file}"
     logger.info(msg)
     return output_file
@@ -358,6 +475,8 @@ async def stage_and_download(  # noqa: RUF100 PLR0913
     *,
     disable_progress: bool = False,
     max_retries: int = 3,
+    resume: bool = False,
+    extract_tar: bool = False,
 ) -> Path:
     """Trigger CASDA to stage the data and then download it once it has been staged.
 
@@ -374,6 +493,11 @@ async def stage_and_download(  # noqa: RUF100 PLR0913
             by `tqdm`. Useful when running in a non-TTY setting.. Defaults to False.
         max_retries (int, optional): The maximum number of retries allowed before a
             file is deemed unsuccessful. Defaults to 3.
+        resume (bool, optional): Resume partially downloaded files and skip already
+            downloaded or extracted files. Defaults to False.
+        extract_tar (bool, optional): Whether tarballs are to be extracted after
+            downloading. Used to check for existing extracted directories when
+            resuming. Defaults to False.
 
     Returns:
         Path: Path to the file that has been downloaded
@@ -383,11 +507,31 @@ async def stage_and_download(  # noqa: RUF100 PLR0913
         output_dir = Path.cwd() / str(sbid)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+    filename = str(result_row["filename"])
+    output_file = output_dir / filename
+
+    if resume:
+        if extract_tar:
+            extracted_path = _get_extracted_path(output_dir, filename)
+            if extracted_path is not None:
+                logger.info(
+                    f"Extracted data for {filename} already exists at "
+                    f"{extracted_path}. Skipping."
+                )
+                return extracted_path
+
+        if output_file.exists() and output_file.stat().st_size > 0:
+            logger.info(f"File {output_file} already exists. Skipping download.")
+            return output_file
+
     url = await asyncio.to_thread(get_download_url, result_row, casda)
-    output_file = output_dir / result_row["filename"]
 
     return await download_file(
-        url, output_file, disable_progress=disable_progress, max_retries=max_retries
+        url,
+        output_file,
+        disable_progress=disable_progress,
+        max_retries=max_retries,
+        resume=resume,
     )
 
 
@@ -403,7 +547,7 @@ def extract_tarball(in_path: Path) -> Path:
         Path: Directory containing the extracted files
 
     """
-    if not tarfile.is_tarfile(in_path):
+    if not in_path.is_file() or not tarfile.is_tarfile(in_path):
         return in_path
 
     logger.info(f"Extracting {in_path=}")
@@ -510,6 +654,8 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
                     casda=casda,
                     disable_progress=download_options.disable_progress,
                     max_retries=download_options.max_retries,
+                    resume=download_options.resume,
+                    extract_tar=download_options.extract_tar,
                 )
                 for row in result_table
             ]
@@ -594,6 +740,14 @@ def main() -> None:
         default=3,
         help="The maximum number of retries allowed for each file when downloading.",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume partially downloaded files and skip already downloaded "
+            "or extracted files."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -607,6 +761,7 @@ def main() -> None:
         log_only=args.log_only,
         disable_progress=disable_progress,
         max_retries=args.max_retries,
+        resume=args.resume,
     )
 
     # Set the logging to a higher level
