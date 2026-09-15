@@ -179,8 +179,6 @@ async def _get_holography_url(
             query_str += (
                 " AND (filename LIKE 'cracoData%' OR filename LIKE '%.uvfits.tar')"
             )
-            if scan_id is not None:
-                query_str += f" AND ( filename LIKE '%{scan_id}.uvfits%')"
         elif dataproduct_type == "science":
             query_str += (
                 " AND (filename LIKE 'scienceData%' OR filename LIKE '%.ms.tar')"
