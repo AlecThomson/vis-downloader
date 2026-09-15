@@ -57,6 +57,9 @@ class DownloadOptions:
     Useful when running in a non-TTY setting."""
     max_retries: int = 3
     """The maximum number of retries to allow when downloading a file."""
+    dataproduct_type: Literal["craco", "science"] | None = None
+    """Filter visibilities by product type: 'craco' (cracoData / uvfits)
+    or 'science' (scienceData / ms). Defaults to None (no filter)."""
 
 
 def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
@@ -137,6 +140,7 @@ async def gather_with_limit(
 async def _get_holography_url(
     sbid: int,
     mode: Literal["vis", "holography"] = "vis",
+    dataproduct_type: Literal["craco", "science"] | None = None,
     beam: int | None = None,
 ) -> Table:
     """Generate and execute a ADQL query.
@@ -145,6 +149,8 @@ async def _get_holography_url(
         sbid (int): The SBID we want files for
         mode (Literal["vis, "holography"], optional): Whether visibilities or holography
             will be downloaded. Defaults to "vis".
+        dataproduct_type (Literal["craco", "science"] | None, optional):
+            Filter visibilities by product type. Defaults to None.
         beam (int | None, optional): Restrict results to a single beam.
             Defaults to None.
 
@@ -160,8 +166,17 @@ async def _get_holography_url(
         query_str = (
             f"SELECT * FROM ivoa.obscore "  # noqa: S608
             f"where obs_id='ASKAP-{sbid}' "
-            f"AND dataproduct_type='visibility'"
+            f"AND dataproduct_type='visibility' "
         )
+        if dataproduct_type == "craco":
+            query_str += (
+                " AND (filename LIKE 'cracoData%' OR filename LIKE '%.uvfits.tar')"
+            )
+        elif dataproduct_type == "science":
+            query_str += (
+                " AND (filename LIKE 'scienceData%' OR filename LIKE '%.ms.tar')"
+            )
+
         if beam is not None:
             query_str += rf" AND filename LIKE '%beam{beam:01d}%'"
     elif mode == "holography":
@@ -189,6 +204,7 @@ async def get_files_to_download(
     sbid: int,
     *,
     download_holography: bool = False,
+    dataproduct_type: Literal["craco", "science"] | None = None,
     beam: int | None = None,
 ) -> Table:
     """Lookup in CASDA files to download for a specified SBID.
@@ -197,6 +213,8 @@ async def get_files_to_download(
         sbid (int): The SBID to download
         download_holography (bool, optional): Whether holography data needs to be
             downloaded. Defaults to False.
+        dataproduct_type (Literal["craco", "science"] | None, optional):
+            Filter visibilities by product type. Defaults to None.
         beam (int | None, optional): Restrict results to a single beam.
             Defaults to None.
 
@@ -206,7 +224,11 @@ async def get_files_to_download(
 
     """
     tables: list[Table] = []
-    results = await _get_holography_url(sbid=sbid, beam=beam)
+    results = await _get_holography_url(
+        sbid=sbid,
+        dataproduct_type=dataproduct_type,
+        beam=beam,
+    )
     tables.append(results)
 
     if download_holography:
@@ -495,6 +517,7 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
             sbid,
             download_holography=download_options.download_holography,
             beam=beam,
+            dataproduct_type=download_options.dataproduct_type,
         )
 
         if download_options.log_only:
@@ -542,6 +565,14 @@ def main() -> None:
         type=int,
         help="Beam to download. Defaults to all.",
         default=None,
+    )
+    parser.add_argument(
+        "--filter-by",
+        type=str,
+        default=None,
+        choices=["craco", "science"],
+        help="Filter visibilities by product type: 'craco' (cracoData / uvfits) "
+        "or 'science' (scienceData / ms). Defaults to None (all).",
     )
     parser.add_argument(
         "--output-dir",
@@ -607,6 +638,7 @@ def main() -> None:
         log_only=args.log_only,
         disable_progress=disable_progress,
         max_retries=args.max_retries,
+        dataproduct_type=args.filter_by,
     )
 
     # Set the logging to a higher level
