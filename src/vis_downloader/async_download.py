@@ -58,8 +58,11 @@ class DownloadOptions:
     max_retries: int = 3
     """The maximum number of retries to allow when downloading a file."""
     dataproduct_type: Literal["craco", "science"] | None = None
-    """Filter visibilities by product type: 'craco' (cracoData / uvfits)
+    """Visibility data product type filter setting: 'craco' (cracoData / uvfits)
     or 'science' (scienceData / ms). Defaults to None (no filter)."""
+    scan_id: int | None = None
+    """Scan ID filter setting, relevant for CRACO data only.
+    Scan ID is yyyymmddhhmmss format. Defaults to None (no filter)."""
 
 
 def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
@@ -142,6 +145,7 @@ async def _get_holography_url(
     mode: Literal["vis", "holography"] = "vis",
     dataproduct_type: Literal["craco", "science"] | None = None,
     beam: int | None = None,
+    scan_id: int | None = None,
 ) -> Table:
     """Generate and execute a ADQL query.
 
@@ -152,6 +156,9 @@ async def _get_holography_url(
         dataproduct_type (Literal["craco", "science"] | None, optional):
             Filter visibilities by product type. Defaults to None.
         beam (int | None, optional): Restrict results to a single beam.
+            Defaults to None.
+        scan_id (int | None, optional): Restrict results to a single scan -
+            relevant for CRACO data only. Format is yyyymmddhhmmss.
             Defaults to None.
 
     Returns:
@@ -172,10 +179,15 @@ async def _get_holography_url(
             query_str += (
                 " AND (filename LIKE 'cracoData%' OR filename LIKE '%.uvfits.tar')"
             )
+            if scan_id is not None:
+                query_str += f" AND ( filename LIKE '%{scan_id}.uvfits%')"
         elif dataproduct_type == "science":
             query_str += (
                 " AND (filename LIKE 'scienceData%' OR filename LIKE '%.ms.tar')"
             )
+
+        if scan_id is not None:
+            query_str += f" AND (filename LIKE '%{scan_id}.uvfits%')"
 
         if beam is not None:
             query_str += rf" AND filename LIKE '%beam{beam:01d}%'"
@@ -206,6 +218,7 @@ async def get_files_to_download(
     download_holography: bool = False,
     dataproduct_type: Literal["craco", "science"] | None = None,
     beam: int | None = None,
+    scan_id: int | None = None,
 ) -> Table:
     """Lookup in CASDA files to download for a specified SBID.
 
@@ -217,6 +230,8 @@ async def get_files_to_download(
             Filter visibilities by product type. Defaults to None.
         beam (int | None, optional): Restrict results to a single beam.
             Defaults to None.
+        scan_id (int | None, optional): Restrict results to a single scan -
+            relevant for CRACO data only. Format is yyyymmddhhmmss. Defaults to None.
 
     Returns:
         Table: Result set of matching files. Should multiple requests be made the
@@ -228,6 +243,7 @@ async def get_files_to_download(
         sbid=sbid,
         dataproduct_type=dataproduct_type,
         beam=beam,
+        scan_id=scan_id,
     )
     tables.append(results)
 
@@ -518,6 +534,7 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
             download_holography=download_options.download_holography,
             beam=beam,
             dataproduct_type=download_options.dataproduct_type,
+            scan_id=download_options.scan_id,
         )
 
         if download_options.log_only:
@@ -564,6 +581,12 @@ def main() -> None:
         "--beam",
         type=int,
         help="Beam to download. Defaults to all.",
+        default=None,
+    )
+    parser.add_argument(
+        "--scan-id",
+        type=int,
+        help="Scan ID to download. Defaults to all.",
         default=None,
     )
     parser.add_argument(
@@ -639,6 +662,7 @@ def main() -> None:
         disable_progress=disable_progress,
         max_retries=args.max_retries,
         dataproduct_type=args.filter_by,
+        scan_id=args.scan_id,
     )
 
     # Set the logging to a higher level
