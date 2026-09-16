@@ -530,6 +530,9 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
             scan_id=download_options.scan_id,
         )
 
+        if len(result_table) == 0:
+            logger.warning(f"No files found for {sbid=} with the given filters.")
+
         if download_options.log_only:
             logger.info(result_table)
             continue
