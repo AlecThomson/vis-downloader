@@ -173,19 +173,14 @@ async def _get_holography_url(
         query_str = (
             f"SELECT * FROM ivoa.obscore "  # noqa: S608
             f"where obs_id='ASKAP-{sbid}' "
-            f"AND dataproduct_type='visibility' "
+            f"AND dataproduct_type='visibility'"
         )
-        if dataproduct_type == "craco":
-            query_str += (
-                " AND (filename LIKE 'cracoData%' OR filename LIKE '%.uvfits.tar')"
-            )
-        elif dataproduct_type == "science":
-            query_str += (
-                " AND (filename LIKE 'scienceData%' OR filename LIKE '%.ms.tar')"
-            )
+        prefixes = {"craco": "cracoData", "science": "scienceData"}
+        if dataproduct_type is not None:
+            query_str += f" AND filename LIKE '{prefixes[dataproduct_type]}%'"
 
         if scan_id is not None:
-            query_str += f" AND (filename LIKE '%{scan_id}.uvfits%')"
+            query_str += f" AND filename LIKE '%{scan_id}%'"
 
         if beam is not None:
             query_str += rf" AND filename LIKE '%beam{beam:01d}%'"
