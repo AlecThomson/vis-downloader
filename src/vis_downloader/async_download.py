@@ -23,7 +23,7 @@ from tqdm.asyncio import tqdm
 from vis_downloader.casda_login import login as casda_login
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    from collections.abc import Awaitable, Callable, Iterable
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -57,7 +57,7 @@ class DownloadOptions:
     Useful when running in a non-TTY setting."""
     max_retries: int = 3
     """The maximum number of retries to allow when downloading a file."""
-    dataproduct_type: Literal["craco", "science"] | None = None
+    vis_type: Literal["craco", "science"] | None = None
     """Visibility data product type filter setting: 'craco' (cracoData / uvfits)
     or 'science' (scienceData / ms). Defaults to None (no filter)."""
     scan_id: int | None = None
@@ -65,7 +65,7 @@ class DownloadOptions:
     Scan ID is yyyymmddhhmmss format. Defaults to None (no filter)."""
 
 
-def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
+def retry_download(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaitable[R]]:
     """Add retry loop around a wrapped function to re-run the function
     should it fail, e.g. network outage issues.
 
@@ -73,14 +73,15 @@ def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
     retries are allowed before a `ValueError` is raised.
 
     Args:
-        func (Awaitable[T]): The function to retry on failure
+        func (Callable[..., Awaitable[R]]): The function to retry on failure
 
     Returns:
-        Awaitable: The wrapped function that will be restarted on failure
+        Callable[..., Awaitable[R]]: The wrapped function that will be restarted
+            on failure
 
     """
 
-    async def _wrapper(*args: T, max_retries: int = 3, **kwargs: T) -> R:  # qa: ignore
+    async def _wrapper(*args: object, max_retries: int = 3, **kwargs: object) -> R:
         if max_retries <= 0:
             msg = f"{max_retries=}, but should be larger than 0"
             raise ValueError(msg)
@@ -140,10 +141,66 @@ async def gather_with_limit(
     )
 
 
+def _build_query(
+    sbid: int,
+    mode: Literal["vis", "holography"] = "vis",
+    vis_type: Literal["craco", "science"] | None = None,
+    beam: int | None = None,
+    scan_id: int | None = None,
+) -> str:
+    """Build the ADQL query for a CASDA lookup.
+
+    Args:
+        sbid (int): The SBID we want files for
+        mode (Literal["vis", "holography"], optional): Whether visibilities or
+            holography will be downloaded. Defaults to "vis".
+        vis_type (Literal["craco", "science"] | None, optional):
+            Filter visibilities by product type. Defaults to None.
+        beam (int | None, optional): Restrict results to a single beam.
+            Defaults to None.
+        scan_id (int | None, optional): Restrict results to a single scan -
+            relevant for CRACO data only. Format is yyyymmddhhmmss.
+            Defaults to None.
+
+    Returns:
+        str: The ADQL query
+
+    Raises:
+        ValueError: Raised if `mode` is not known
+
+    """
+    if mode == "holography":
+        return (
+            f"SELECT * FROM casda.observation_evaluation_file "  # noqa: S608
+            f"where sbid='{sbid}' and format='calibration'"
+        )
+
+    if mode != "vis":
+        msg = f"Unknown {mode=}"
+        raise ValueError(msg)
+
+    query_str = (
+        f"SELECT * FROM ivoa.obscore "  # noqa: S608
+        f"where obs_id='ASKAP-{sbid}' "
+        f"AND dataproduct_type='visibility'"
+    )
+    prefixes = {"craco": "cracoData", "science": "scienceData"}
+    if vis_type is not None:
+        query_str += f" AND filename LIKE '{prefixes[vis_type]}%'"
+
+    if scan_id is not None:
+        query_str += f" AND filename LIKE '%{scan_id}%'"
+
+    if beam is not None:
+        query_str += rf" AND filename LIKE '%beam{beam:01d}%'"
+
+    return query_str
+
+
 async def _get_holography_url(
     sbid: int,
     mode: Literal["vis", "holography"] = "vis",
-    dataproduct_type: Literal["craco", "science"] | None = None,
+    vis_type: Literal["craco", "science"] | None = None,
     beam: int | None = None,
     scan_id: int | None = None,
 ) -> Table:
@@ -153,7 +210,7 @@ async def _get_holography_url(
         sbid (int): The SBID we want files for
         mode (Literal["vis, "holography"], optional): Whether visibilities or holography
             will be downloaded. Defaults to "vis".
-        dataproduct_type (Literal["craco", "science"] | None, optional):
+        vis_type (Literal["craco", "science"] | None, optional):
             Filter visibilities by product type. Defaults to None.
         beam (int | None, optional): Restrict results to a single beam.
             Defaults to None.
@@ -169,29 +226,9 @@ async def _get_holography_url(
         ValueError: Raised if the remote request returns failed
 
     """
-    if mode == "vis":
-        query_str = (
-            f"SELECT * FROM ivoa.obscore "  # noqa: S608
-            f"where obs_id='ASKAP-{sbid}' "
-            f"AND dataproduct_type='visibility'"
-        )
-        prefixes = {"craco": "cracoData", "science": "scienceData"}
-        if dataproduct_type is not None:
-            query_str += f" AND filename LIKE '{prefixes[dataproduct_type]}%'"
-
-        if scan_id is not None:
-            query_str += f" AND filename LIKE '%{scan_id}%'"
-
-        if beam is not None:
-            query_str += rf" AND filename LIKE '%beam{beam:01d}%'"
-    elif mode == "holography":
-        query_str = (
-            f"SELECT * FROM casda.observation_evaluation_file "  # noqa: S608
-            f"where sbid='{sbid}' and format='calibration'"
-        )
-    else:
-        msg = f"Unknown {mode=}"
-        raise ValueError(msg)
+    query_str = _build_query(
+        sbid=sbid, mode=mode, vis_type=vis_type, beam=beam, scan_id=scan_id
+    )
 
     logger.info(f"Querying CASDA for {sbid=} {mode=}")
 
@@ -209,7 +246,7 @@ async def get_files_to_download(
     sbid: int,
     *,
     download_holography: bool = False,
-    dataproduct_type: Literal["craco", "science"] | None = None,
+    vis_type: Literal["craco", "science"] | None = None,
     beam: int | None = None,
     scan_id: int | None = None,
 ) -> Table:
@@ -219,7 +256,7 @@ async def get_files_to_download(
         sbid (int): The SBID to download
         download_holography (bool, optional): Whether holography data needs to be
             downloaded. Defaults to False.
-        dataproduct_type (Literal["craco", "science"] | None, optional):
+        vis_type (Literal["craco", "science"] | None, optional):
             Filter visibilities by product type. Defaults to None.
         beam (int | None, optional): Restrict results to a single beam.
             Defaults to None.
@@ -234,7 +271,7 @@ async def get_files_to_download(
     tables: list[Table] = []
     results = await _get_holography_url(
         sbid=sbid,
-        dataproduct_type=dataproduct_type,
+        vis_type=vis_type,
         beam=beam,
         scan_id=scan_id,
     )
@@ -454,20 +491,21 @@ def extract_tarball(in_path: Path) -> Path:
 
 
 def coros_with_limits(
-    coros: Awaitable[T], max_limit: int, key: str | None = None
-) -> Awaitable[T]:
+    coros: Iterable[Awaitable[T]], max_limit: int, key: str = "default"
+) -> list[Awaitable[T]]:
     """Place a limiter on a set of co-routines via an asynio Semaphore. The `key`
     is used to denote different semaphores from one another, or use a previously
     created semaphore.
 
     Args:
-        coros (Awaitable[T]): The co-routines that will have some limiter placed
+        coros (Iterable[Awaitable[T]]): The co-routines that will have some limiter
+          placed
         max_limit (int): The maximum limit of workers
-        key (str | None, optional): The semaphore to use for this limiter. If None or
-          the `key` has not been used one is created. Defaults to None.
+        key (str, optional): The semaphore to use for this limiter. If the `key` has
+          not been used one is created. Defaults to "default".
 
     Returns:
-        Awaitable[T]: New routines with a collective semaphore context applied
+        list[Awaitable[T]]: New routines with a collective semaphore context applied
 
     """
     semaphore = SEMAPHORES.get(key)
@@ -519,14 +557,14 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
         reenter_password=reenter_password,
     )
 
-    sbids_coros = []
+    sbids_coros: list[Awaitable[Path]] = []
 
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(
             sbid,
             download_holography=download_options.download_holography,
             beam=beam,
-            dataproduct_type=download_options.dataproduct_type,
+            vis_type=download_options.vis_type,
             scan_id=download_options.scan_id,
         )
 
@@ -551,7 +589,7 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
             ]
         )
 
-    paths = []
+    paths: list[Path] = []
 
     coros = coros_with_limits(
         sbids_coros, max_limit=download_options.max_workers, key="sbid"
@@ -586,7 +624,7 @@ def main() -> None:
         default=None,
     )
     parser.add_argument(
-        "--filter-by",
+        "--vis-type",
         type=str,
         default=None,
         choices=["craco", "science"],
@@ -657,7 +695,7 @@ def main() -> None:
         log_only=args.log_only,
         disable_progress=disable_progress,
         max_retries=args.max_retries,
-        dataproduct_type=args.filter_by,
+        vis_type=args.vis_type,
         scan_id=args.scan_id,
     )
 
