@@ -36,7 +36,7 @@ repos:
     rev: "v2.3.0"
     hooks:
       - id: mypy
-        files: flint|tests
+        files: src|tests
         args: ["--ignore-missing-imports"]
         additional_dependencies:
           - pytest

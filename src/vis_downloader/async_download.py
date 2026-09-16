@@ -23,7 +23,7 @@ from tqdm.asyncio import tqdm
 from vis_downloader.casda_login import login as casda_login
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    from collections.abc import Awaitable, Callable, Iterable
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -65,7 +65,7 @@ class DownloadOptions:
     Scan ID is yyyymmddhhmmss format. Defaults to None (no filter)."""
 
 
-def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
+def retry_download(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaitable[R]]:
     """Add retry loop around a wrapped function to re-run the function
     should it fail, e.g. network outage issues.
 
@@ -73,14 +73,15 @@ def retry_download(func: Awaitable[T, R]) -> Awaitable[T, R]:
     retries are allowed before a `ValueError` is raised.
 
     Args:
-        func (Awaitable[T]): The function to retry on failure
+        func (Callable[..., Awaitable[R]]): The function to retry on failure
 
     Returns:
-        Awaitable: The wrapped function that will be restarted on failure
+        Callable[..., Awaitable[R]]: The wrapped function that will be restarted
+            on failure
 
     """
 
-    async def _wrapper(*args: T, max_retries: int = 3, **kwargs: T) -> R:  # qa: ignore
+    async def _wrapper(*args: object, max_retries: int = 3, **kwargs: object) -> R:
         if max_retries <= 0:
             msg = f"{max_retries=}, but should be larger than 0"
             raise ValueError(msg)
@@ -490,20 +491,21 @@ def extract_tarball(in_path: Path) -> Path:
 
 
 def coros_with_limits(
-    coros: Awaitable[T], max_limit: int, key: str | None = None
-) -> Awaitable[T]:
+    coros: Iterable[Awaitable[T]], max_limit: int, key: str = "default"
+) -> list[Awaitable[T]]:
     """Place a limiter on a set of co-routines via an asynio Semaphore. The `key`
     is used to denote different semaphores from one another, or use a previously
     created semaphore.
 
     Args:
-        coros (Awaitable[T]): The co-routines that will have some limiter placed
+        coros (Iterable[Awaitable[T]]): The co-routines that will have some limiter
+          placed
         max_limit (int): The maximum limit of workers
-        key (str | None, optional): The semaphore to use for this limiter. If None or
-          the `key` has not been used one is created. Defaults to None.
+        key (str, optional): The semaphore to use for this limiter. If the `key` has
+          not been used one is created. Defaults to "default".
 
     Returns:
-        Awaitable[T]: New routines with a collective semaphore context applied
+        list[Awaitable[T]]: New routines with a collective semaphore context applied
 
     """
     semaphore = SEMAPHORES.get(key)
@@ -555,7 +557,7 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
         reenter_password=reenter_password,
     )
 
-    sbids_coros = []
+    sbids_coros: list[Awaitable[Path]] = []
 
     for sbid in sbid_list:
         result_table: Table = await get_files_to_download(
@@ -587,7 +589,7 @@ async def get_cutouts_from_casda(  # noqa: PLR0913
             ]
         )
 
-    paths = []
+    paths: list[Path] = []
 
     coros = coros_with_limits(
         sbids_coros, max_limit=download_options.max_workers, key="sbid"
