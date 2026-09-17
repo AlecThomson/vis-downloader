@@ -23,9 +23,9 @@ pip install git+https://github.com/AlecThomson/vis-downloader
 To make sure you don't DDoS CASDA, please make use of the `--max-workers` option.
 
 ```bash
-usage: vis_download [-h] [--beam BEAM] [--output-dir OUTPUT_DIR] [--username USERNAME] [--store-password] [--reenter-password]
-                    [--max-workers MAX_WORKERS] [--extract-tar] [--download-holography] [--log-only] [--disable-progress] [--quiet]
-                    [--max-retries MAX_RETRIES] [--resume]
+usage: vis_download [-h] [--beam BEAM] [--scan-id SCAN_ID] [--vis-type {craco,science}] [--output-dir OUTPUT_DIR]
+                    [--username USERNAME] [--store-password] [--reenter-password] [--max-workers MAX_WORKERS] [--extract-tar]
+                    [--download-holography] [--log-only] [--disable-progress] [--quiet] [--max-retries MAX_RETRIES] [--resume]
                     sbids [sbids ...]
 
 Download visibilities from CASDA for a given SBID
@@ -36,6 +36,10 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --beam BEAM           Beam to download. Defaults to all.
+  --scan-id SCAN_ID     Scan ID to download. Defaults to all.
+  --vis-type {craco,science}
+                        Filter visibilities by product type: 'craco' (cracoData / uvfits) or 'science' (scienceData / ms).
+                        Defaults to None (all).
   --output-dir OUTPUT_DIR
                         Output directory. If unset a directory for each SBID will be created.
   --username USERNAME   CASDA username
@@ -51,6 +55,7 @@ options:
   --quiet               Silence logged output and progress bar updates
   --max-retries MAX_RETRIES
                         The maximum number of retries allowed for each file when downloading.
+  --resume              Resume partially downloaded files and skip already completed files.
 ```
 
 To cache your CASDA credentials run:
