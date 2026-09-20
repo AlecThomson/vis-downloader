@@ -39,7 +39,8 @@ dev = [
     "ruff",
     "pytest",
     "pytest-cov",
-    "pytest"
+    "pytest",
+    "pytest-asyncio",
 ]
 
 [project.urls]

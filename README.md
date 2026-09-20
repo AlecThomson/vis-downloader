@@ -25,7 +25,7 @@ To make sure you don't DDoS CASDA, please make use of the `--max-workers` option
 ```bash
 usage: vis_download [-h] [--beam BEAM] [--scan-id SCAN_ID] [--vis-type {craco,science}] [--output-dir OUTPUT_DIR]
                     [--username USERNAME] [--store-password] [--reenter-password] [--max-workers MAX_WORKERS] [--extract-tar]
-                    [--download-holography] [--log-only] [--disable-progress] [--quiet] [--max-retries MAX_RETRIES]
+                    [--download-holography] [--log-only] [--disable-progress] [--quiet] [--max-retries MAX_RETRIES] [--resume]
                     sbids [sbids ...]
 
 Download visibilities from CASDA for a given SBID
@@ -55,6 +55,7 @@ options:
   --quiet               Silence logged output and progress bar updates
   --max-retries MAX_RETRIES
                         The maximum number of retries allowed for each file when downloading.
+  --resume              Resume partially downloaded files and skip already completed files.
 ```
 
 To cache your CASDA credentials run:
