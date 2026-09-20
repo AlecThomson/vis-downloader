@@ -443,7 +443,7 @@ def plan_stream(
     raise RuntimeError(msg)
 
 
-async def _stream_response_to_file(  # ruff: ignore[too-many-arguments]
+async def stream_response_to_file(  # ruff: ignore[too-many-arguments]
     response: aiohttp.ClientResponse,
     part_file: Path,
     output_filename: str,
@@ -575,7 +575,7 @@ async def fetch_to_part_file(  # ruff: ignore[too-many-arguments]
 
     async with session.get(url, headers=headers) as response:
         if response.status != range_not_satisfiable_status or curr_bytes == 0:
-            await _stream_response_to_file(
+            await stream_response_to_file(
                 response=response,
                 part_file=part_file,
                 output_filename=output_filename,
@@ -602,7 +602,7 @@ async def fetch_to_part_file(  # ruff: ignore[too-many-arguments]
 
     # A plain request answers 200, which truncates the stale partial file.
     async with session.get(url) as response:
-        await _stream_response_to_file(
+        await stream_response_to_file(
             response=response,
             part_file=part_file,
             output_filename=output_filename,
