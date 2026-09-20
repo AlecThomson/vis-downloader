@@ -10,10 +10,48 @@ from astropy.table import Row, Table
 from vis_downloader.async_download import (
     DownloadOptions,
     _get_extracted_path,
+    content_range_total,
     download_file,
     extract_tarball,
     stage_and_download,
 )
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        # Ordinary partial response
+        ("bytes 0-499/1234", 1234),
+        ("bytes 500-1233/1234", 1234),
+        # 416 unsatisfied-range form, which is what the resume path relies on
+        ("bytes */1234", 1234),
+        ("bytes */0", 0),
+        # Complete length unknown
+        ("bytes 0-499/*", None),
+        ("bytes */*", None),
+        # Missing or empty
+        (None, None),
+        ("", None),
+        # No "/" at all
+        ("bytes 0-499", None),
+        ("bytes", None),
+        # Surrounding and internal whitespace
+        ("  bytes */1234  ", 1234),
+        ("bytes */ 1234", 1234),
+        ("bytes */12 34", None),
+        # Non-numeric or malformed lengths
+        ("bytes */abc", None),
+        ("bytes */1234.5", None),
+        ("bytes */", None),
+        ("/", None),
+        # A unit other than bytes still parses; we only want the last field
+        ("items 0-5/10", 10),
+        # Multiple slashes: only the final field counts
+        ("bytes 0-499/1234/5678", 5678),
+    ],
+)
+def test_content_range_total(header: str | None, expected: int | None):
+    assert content_range_total(header) == expected
 
 
 def test_get_extracted_path(tmp_path: Path):
@@ -153,6 +191,24 @@ class MockSession:
         pass
 
 
+class MockSequenceSession:
+    """Session returning a different response for each successive ``get`` call."""
+
+    def __init__(self, responses: list[MockResponse]):
+        self._responses = list(responses)
+        self.recorded_headers: list[dict[str, str] | None] = []
+
+    def get(self, url, headers=None):
+        self.recorded_headers.append(headers)
+        return self._responses.pop(0)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
 @pytest.mark.asyncio
 async def test_download_file_resume_partial(tmp_path: Path):
     output_file = tmp_path / "partial.dat"
@@ -213,6 +269,103 @@ async def test_download_file_resume_server_returns_200(tmp_path: Path):
     assert result == output_file
     assert not part_file.exists()
     assert output_file.read_bytes() == full_data
+
+
+@pytest.mark.asyncio
+async def test_download_file_416_matching_size_finalises(tmp_path: Path):
+    output_file = tmp_path / "done.dat"
+    part_file = tmp_path / "done.dat.part"
+
+    complete_data = b"the whole file"
+    part_file.write_bytes(complete_data)
+
+    mock_resp = MockResponse(
+        status=416,
+        headers={"Content-Range": f"bytes */{len(complete_data)}"},
+        chunks=[],
+    )
+    mock_session = MockSession(mock_resp)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        result = await download_file(
+            url="http://example.com/done.dat",
+            output_file=output_file,
+            resume=True,
+            disable_progress=True,
+        )
+
+    assert result == output_file
+    assert not part_file.exists()
+    assert output_file.read_bytes() == complete_data
+
+
+@pytest.mark.asyncio
+async def test_download_file_416_size_mismatch_redownloads(tmp_path: Path):
+    output_file = tmp_path / "stale.dat"
+    part_file = tmp_path / "stale.dat.part"
+
+    # Larger than the real remote object, so the server answers 416
+    part_file.write_bytes(b"stale oversized partial content")
+
+    full_data = b"correct content"
+    responses = [
+        MockResponse(
+            status=416,
+            headers={"Content-Range": f"bytes */{len(full_data)}"},
+            chunks=[],
+        ),
+        MockResponse(
+            status=200,
+            headers={"content-length": str(len(full_data))},
+            chunks=[full_data],
+        ),
+    ]
+    mock_session = MockSequenceSession(responses)
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        result = await download_file(
+            url="http://example.com/stale.dat",
+            output_file=output_file,
+            resume=True,
+            disable_progress=True,
+        )
+
+    assert result == output_file
+    assert not part_file.exists()
+    assert output_file.read_bytes() == full_data
+    # First request resumes, second refetches the whole object
+    assert mock_session.recorded_headers[0] == {"Range": "bytes=31-"}
+    assert not mock_session.recorded_headers[1]
+
+
+@pytest.mark.asyncio
+async def test_stage_and_download_reextracts_when_tarball_remains(tmp_path: Path):
+    out_dir = tmp_path / "123"
+    out_dir.mkdir()
+
+    # A partially extracted directory alongside a tarball that was never
+    # deleted means the previous extraction was interrupted.
+    extracted_dir = out_dir / "scienceData_SB123_beam00.ms"
+    extracted_dir.mkdir()
+    tarball = out_dir / "scienceData_SB123_beam00.ms.tar"
+    tarball.write_bytes(b"tarball content")
+
+    row = {"filename": "scienceData_SB123_beam00.ms.tar"}
+    mock_casda = MagicMock()
+
+    with patch("vis_downloader.async_download.get_download_url") as mock_url:
+        result = await stage_and_download(
+            sbid=123,
+            result_row=row,
+            casda=mock_casda,
+            output_dir=out_dir,
+            resume=True,
+            extract_tar=True,
+        )
+
+    # Falls through to the tarball so the caller re-runs extraction
+    assert result == tarball
+    mock_url.assert_not_called()
 
 
 def test_extract_tarball_directory(tmp_path: Path):

@@ -55,8 +55,18 @@ options:
   --quiet               Silence logged output and progress bar updates
   --max-retries MAX_RETRIES
                         The maximum number of retries allowed for each file when downloading.
-  --resume              Resume partially downloaded files and skip already completed files.
+  --resume              Resume partially downloaded files and skip already downloaded or extracted files.
 ```
+
+### Resuming an interrupted download
+
+Interrupted downloads can be continued by re-running the same command with `--resume` e.g.:
+
+```bash
+vis_download 12345 --output-dir /path/to/data --max-workers 4 --extract-tar --resume
+```
+
+A file that was partway through continues from the byte it stopped at, and files that already finished are skipped without re-querying CASDA. With `--extract-tar`, an archive that was already unpacked is skipped as well; if an extraction was itself interrupted, the tarball is still on disk and the data is extracted again rather than left incomplete.
 
 To cache your CASDA credentials run:
 
