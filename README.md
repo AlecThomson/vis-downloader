@@ -60,7 +60,7 @@ options:
 
 ### Resuming an interrupted download
 
-Long downloads get cut short — a SLURM job hits its time limit, or an SSH connection running the download drops. Re-running the same command with `--resume` picks up where it left off:
+Interrupted downloads can be continued by re-running the same command with `--resume` e.g.:
 
 ```bash
 vis_download 12345 --output-dir /path/to/data --max-workers 4 --extract-tar --resume
