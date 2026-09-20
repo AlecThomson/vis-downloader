@@ -365,6 +365,25 @@ def _get_extracted_path(output_dir: Path, filename: str) -> Path | None:
     return None
 
 
+def _content_range_total(content_range: str | None) -> int | None:
+    """Parse the total resource size out of a ``Content-Range`` header.
+
+    Args:
+        content_range (str | None): Raw header value, e.g. ``bytes */12345``.
+
+    Returns:
+        int | None: The total size in bytes, or None if it could not be parsed.
+
+    """
+    if not content_range or "/" not in content_range:
+        return None
+    total = content_range.rsplit("/", 1)[-1].strip()
+    try:
+        return int(total)
+    except ValueError:
+        return None
+
+
 async def _stream_response_to_file(  # ruff: ignore[too-many-arguments]
     response: aiohttp.ClientResponse,
     part_file: Path,
@@ -508,26 +527,49 @@ async def download_file(  # ruff: ignore[too-many-arguments]
     )
     range_not_satisfiable_status = 416
 
-    async with (
-        aiohttp.ClientSession(timeout=timeout) as session,
-        session.get(encoded_url, headers=headers) as response,
-    ):
-        if response.status == range_not_satisfiable_status and curr_bytes > 0:
-            logger.info(
-                f"Range not satisfiable (status 416) for {output_file.name}. "
-                "Finalizing existing download."
-            )
-            part_file.replace(output_file)
-            return output_file
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        restart_from_scratch = False
+        async with session.get(encoded_url, headers=headers) as response:
+            if response.status == range_not_satisfiable_status and curr_bytes > 0:
+                remote_size = _content_range_total(
+                    response.headers.get("Content-Range")
+                )
+                if remote_size == curr_bytes:
+                    logger.info(
+                        f"Range not satisfiable (status 416) for {output_file.name} "
+                        f"and the partial file matches the remote size "
+                        f"({remote_size} bytes). Finalizing existing download."
+                    )
+                    part_file.replace(output_file)
+                    return output_file
 
-        await _stream_response_to_file(
-            response=response,
-            part_file=part_file,
-            output_filename=output_file.name,
-            curr_bytes=curr_bytes,
-            chunk_size=chunk_size,
-            disable_progress=disable_progress,
-        )
+                logger.warning(
+                    f"Range not satisfiable (status 416) for {output_file.name}, "
+                    f"but the partial file ({curr_bytes} bytes) does not match the "
+                    f"remote size ({remote_size}). Discarding it and downloading "
+                    "the whole file again."
+                )
+                restart_from_scratch = True
+            else:
+                await _stream_response_to_file(
+                    response=response,
+                    part_file=part_file,
+                    output_filename=output_file.name,
+                    curr_bytes=curr_bytes,
+                    chunk_size=chunk_size,
+                    disable_progress=disable_progress,
+                )
+
+        if restart_from_scratch:
+            async with session.get(encoded_url) as response:
+                await _stream_response_to_file(
+                    response=response,
+                    part_file=part_file,
+                    output_filename=output_file.name,
+                    curr_bytes=0,
+                    chunk_size=chunk_size,
+                    disable_progress=disable_progress,
+                )
 
     part_file.replace(output_file)
     msg = f"Downloaded to {output_file}"
@@ -582,11 +624,21 @@ async def stage_and_download(  # ruff: ignore[too-many-arguments]
         if extract_tar:
             extracted_path = _get_extracted_path(output_dir, filename)
             if extracted_path is not None:
-                logger.info(
-                    f"Extracted data for {filename} already exists at "
-                    f"{extracted_path}. Skipping."
+                # extract_tarball() removes the tarball only after every member
+                # has been written, so a surviving tarball means the previous
+                # extraction was cut short and the directory is incomplete.
+                if not output_file.exists():
+                    logger.info(
+                        f"Extracted data for {filename} already exists at "
+                        f"{extracted_path}. Skipping."
+                    )
+                    return extracted_path
+
+                logger.warning(
+                    f"Found extracted data at {extracted_path}, but {output_file} "
+                    "is still present, so the previous extraction did not finish. "
+                    "Re-extracting."
                 )
-                return extracted_path
 
         if output_file.exists() and output_file.stat().st_size > 0:
             logger.info(f"File {output_file} already exists. Skipping download.")
