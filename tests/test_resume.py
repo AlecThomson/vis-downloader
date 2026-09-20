@@ -10,10 +10,48 @@ from astropy.table import Row, Table
 from vis_downloader.async_download import (
     DownloadOptions,
     _get_extracted_path,
+    content_range_total,
     download_file,
     extract_tarball,
     stage_and_download,
 )
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [
+        # Ordinary partial response
+        ("bytes 0-499/1234", 1234),
+        ("bytes 500-1233/1234", 1234),
+        # 416 unsatisfied-range form, which is what the resume path relies on
+        ("bytes */1234", 1234),
+        ("bytes */0", 0),
+        # Complete length unknown
+        ("bytes 0-499/*", None),
+        ("bytes */*", None),
+        # Missing or empty
+        (None, None),
+        ("", None),
+        # No "/" at all
+        ("bytes 0-499", None),
+        ("bytes", None),
+        # Surrounding and internal whitespace
+        ("  bytes */1234  ", 1234),
+        ("bytes */ 1234", 1234),
+        ("bytes */12 34", None),
+        # Non-numeric or malformed lengths
+        ("bytes */abc", None),
+        ("bytes */1234.5", None),
+        ("bytes */", None),
+        ("/", None),
+        # A unit other than bytes still parses; we only want the last field
+        ("items 0-5/10", 10),
+        # Multiple slashes: only the final field counts
+        ("bytes 0-499/1234/5678", 5678),
+    ],
+)
+def test_content_range_total(header: str | None, expected: int | None):
+    assert content_range_total(header) == expected
 
 
 def test_get_extracted_path(tmp_path: Path):

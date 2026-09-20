@@ -365,22 +365,30 @@ def _get_extracted_path(output_dir: Path, filename: str) -> Path | None:
     return None
 
 
-def _content_range_total(content_range: str | None) -> int | None:
+def content_range_total(content_range: str | None) -> int | None:
     """Parse the total resource size out of a ``Content-Range`` header.
 
+    Per RFC 7233 the header reads ``<unit> <range>/<complete-length>``, for
+    example ``bytes 0-499/1234``, or ``bytes */1234`` on the 416 response that
+    says a requested range ran past the end. The complete length is the field
+    after the final ``/``, and is ``*`` when the server does not know it.
+
     Args:
-        content_range (str | None): Raw header value, e.g. ``bytes */12345``.
+        content_range (str | None): Raw header value, e.g. ``bytes */1234``.
 
     Returns:
-        int | None: The total size in bytes, or None if it could not be parsed.
+        int | None: The total size in bytes, or None when the header is
+            missing, malformed, or reports an unknown length.
 
     """
     if not content_range or "/" not in content_range:
         return None
-    total = content_range.rsplit("/", 1)[-1].strip()
+
+    complete_length = content_range.rsplit("/", 1)[-1].strip()
     try:
-        return int(total)
+        return int(complete_length)
     except ValueError:
+        # "*" (length unknown), or a header we do not recognise.
         return None
 
 
@@ -416,7 +424,7 @@ def plan_stream(
     partial_content_status = 206
 
     if response.status == partial_content_status:
-        total_size = _content_range_total(response.headers.get("Content-Range"))
+        total_size = content_range_total(response.headers.get("Content-Range"))
         if total_size is None:
             total_size = curr_bytes + int(response.headers.get("content-length", 0))
         logger.info(
@@ -482,7 +490,7 @@ async def stream_response_to_file(  # ruff: ignore[too-many-arguments]
             file_desc.write(chunk)
 
 
-def _escaped_url(url: str) -> yarl.URL:
+def encode_casda_url(url: str) -> yarl.URL:
     """Encode a CASDA URL so aiohttp sends it verbatim.
 
     Args:
@@ -506,7 +514,7 @@ def _escaped_url(url: str) -> yarl.URL:
     return yarl.URL(escaped_url_str, encoded=True)
 
 
-def _file_has_content(path: Path) -> bool:
+def file_has_content(path: Path) -> bool:
     """Check whether a path exists and is non-empty.
 
     Args:
@@ -519,7 +527,7 @@ def _file_has_content(path: Path) -> bool:
     return path.exists() and path.stat().st_size > 0
 
 
-def _partial_byte_count(part_file: Path, *, resume: bool) -> int:
+def partial_byte_count(part_file: Path, *, resume: bool) -> int:
     """Count the bytes already written to a partial file.
 
     Args:
@@ -585,7 +593,7 @@ async def fetch_to_part_file(  # ruff: ignore[too-many-arguments]
             )
             return
 
-        remote_size = _content_range_total(response.headers.get("Content-Range"))
+        remote_size = content_range_total(response.headers.get("Content-Range"))
         if remote_size == curr_bytes:
             logger.info(
                 f"Range not satisfiable (status 416) for {output_filename} and the "
@@ -643,13 +651,13 @@ async def download_file(  # ruff: ignore[too-many-arguments]
         Path: Location of the file that was written to
 
     """
-    if resume and _file_has_content(output_file):
+    if resume and file_has_content(output_file):
         logger.info(f"File {output_file} already exists. Skipping download.")
         return output_file
 
     part_file = output_file.with_name(f"{output_file.name}.part")
-    encoded_url = _escaped_url(url)
-    curr_bytes = _partial_byte_count(part_file, resume=resume)
+    encoded_url = encode_casda_url(url)
+    curr_bytes = partial_byte_count(part_file, resume=resume)
 
     timeout = aiohttp.ClientTimeout(
         total=download_timeout_seconds,
@@ -673,7 +681,7 @@ async def download_file(  # ruff: ignore[too-many-arguments]
     return output_file
 
 
-def resolve_resume_target(
+def find_completed_download(
     output_dir: Path, filename: str, output_file: Path, *, extract_tar: bool
 ) -> Path | None:
     """Find an already-downloaded path that makes this download unnecessary.
@@ -706,7 +714,7 @@ def resolve_resume_target(
             "present, so the previous extraction did not finish. Re-extracting."
         )
 
-    if _file_has_content(output_file):
+    if file_has_content(output_file):
         logger.info(f"File {output_file} already exists. Skipping download.")
         return output_file
 
@@ -757,7 +765,7 @@ async def stage_and_download(  # ruff: ignore[too-many-arguments]
     output_file = output_dir / filename
 
     if resume:
-        existing = resolve_resume_target(
+        existing = find_completed_download(
             output_dir, filename, output_file, extract_tar=extract_tar
         )
         if existing is not None:
