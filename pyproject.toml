@@ -36,10 +36,11 @@ dependencies = [
 dev = [
     "pre-commit",
     "mypy",
-    "ruff",
+    "ruff~=0.16.8",
     "pytest",
     "pytest-cov",
-    "pytest"
+    "pytest",
+    "pytest-asyncio",
 ]
 
 [project.urls]
